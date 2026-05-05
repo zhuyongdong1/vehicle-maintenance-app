@@ -86,7 +86,7 @@ class RecordHandler {
           await Database.instance.insert(
             "INSERT INTO ledger (type, category_id, amount, record_date, description, related_record_id) VALUES ('income', ?, ?, ?, ?, ?)",
             [
-              body['category_id'],
+              await _ledgerCategoryId('ledger_income', '维修收入'),
               saleAmount,
               body['record_date'],
               body['items']?.toString() ?? '维修收入',

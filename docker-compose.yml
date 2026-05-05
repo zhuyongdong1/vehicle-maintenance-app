@@ -13,7 +13,10 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
       - ./backend/lib/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
 
   api:
     build:
@@ -31,9 +34,10 @@ services:
       - DB_USER=root
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
       - DB_NAME=vehicle_maintenance
+      - RUN_SCHEMA_MIGRATIONS=true
       - PORT=8080
       - API_KEY=${API_KEY:?API_KEY is required}
-      - ALLOWED_ORIGINS=https://ulbooks.cn,https://www.ulbooks.cn
+      - ALLOWED_ORIGINS=https://ulbooks.cn,https://www.ulbooks.cn,http://localhost:5180,http://127.0.0.1:5180
       - BAIDU_API_KEY=${BAIDU_API_KEY}
       - BAIDU_SECRET_KEY=${BAIDU_SECRET_KEY}
       - UPLOAD_BASE_URL=https://ulbooks.cn/uploads

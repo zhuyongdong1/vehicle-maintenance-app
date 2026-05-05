@@ -1,5 +1,7 @@
 -- 车辆维修管理系统数据库 Schema
 
+SET NAMES utf8mb4;
+
 CREATE DATABASE IF NOT EXISTS vehicle_maintenance DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE vehicle_maintenance;
 
@@ -49,21 +51,6 @@ CREATE TABLE IF NOT EXISTS inventory_items (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_inventory_sku (sku)
-);
-
--- 库存出入库流水表
-CREATE TABLE IF NOT EXISTS inventory_transactions (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    item_id BIGINT NOT NULL COMMENT '配件ID',
-    type ENUM('in', 'out', 'adjust') NOT NULL COMMENT '类型：入库/出库/调整',
-    quantity INT NOT NULL COMMENT '变动数量',
-    unit_price DECIMAL(10,2) DEFAULT 0 COMMENT '单价',
-    related_record_id INT COMMENT '关联工单ID',
-    operator VARCHAR(50) COMMENT '操作人',
-    notes TEXT COMMENT '备注',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (item_id) REFERENCES inventory_items(id) ON DELETE CASCADE,
-    FOREIGN KEY (related_record_id) REFERENCES records(id) ON DELETE SET NULL
 );
 
 -- 车辆表
@@ -118,4 +105,19 @@ CREATE TABLE IF NOT EXISTS ledger (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+);
+
+-- 库存出入库流水表
+CREATE TABLE IF NOT EXISTS inventory_transactions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    item_id BIGINT NOT NULL COMMENT '配件ID',
+    type ENUM('in', 'out', 'adjust') NOT NULL COMMENT '类型：入库/出库/调整',
+    quantity INT NOT NULL COMMENT '变动数量',
+    unit_price DECIMAL(10,2) DEFAULT 0 COMMENT '单价',
+    related_record_id INT COMMENT '关联工单ID',
+    operator VARCHAR(50) COMMENT '操作人',
+    notes TEXT COMMENT '备注',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (item_id) REFERENCES inventory_items(id) ON DELETE CASCADE,
+    FOREIGN KEY (related_record_id) REFERENCES records(id) ON DELETE SET NULL
 );

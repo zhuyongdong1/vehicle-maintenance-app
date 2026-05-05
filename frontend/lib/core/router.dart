@@ -31,6 +31,16 @@ final router = GoRouter(
         GoRoute(path: '/records', builder: (_, __) => const RecordListPage()),
         GoRoute(path: '/ledger', builder: (_, __) => const LedgerListPage()),
         GoRoute(path: '/settings', builder: (_, __) => const SettingsPage()),
+        GoRoute(path: '/inventory', builder: (_, __) => const InventoryPage()),
+        GoRoute(path: '/stats', builder: (_, __) => const StatsPage()),
+        GoRoute(
+          path: '/settings/categories',
+          builder: (_, state) => CategoryManagePage(
+            categoryType:
+                state.uri.queryParameters['type'] ?? 'maintenance_type',
+          ),
+        ),
+        GoRoute(path: '/reminders', builder: (_, __) => const ReminderPage()),
       ],
     ),
     GoRoute(
@@ -79,15 +89,6 @@ final router = GoRouter(
       builder: (_, state) =>
           LedgerEditPage(ledgerId: int.parse(state.pathParameters['id']!)),
     ),
-    GoRoute(path: '/inventory', builder: (_, __) => const InventoryPage()),
-    GoRoute(path: '/stats', builder: (_, __) => const StatsPage()),
-    GoRoute(
-      path: '/settings/categories',
-      builder: (_, state) => CategoryManagePage(
-        categoryType: state.uri.queryParameters['type'] ?? 'maintenance_type',
-      ),
-    ),
-    GoRoute(path: '/reminders', builder: (_, __) => const ReminderPage()),
   ],
 );
 
@@ -102,6 +103,9 @@ class ScaffoldWithNav extends StatelessWidget {
     if (location.startsWith('/vehicles')) return 2;
     if (location.startsWith('/ledger')) return 3;
     if (location.startsWith('/settings')) return 4;
+    if (location.startsWith('/inventory')) return 4;
+    if (location.startsWith('/stats')) return 4;
+    if (location.startsWith('/reminders')) return 4;
     return 0;
   }
 
