@@ -1,0 +1,11 @@
+# Dependency and generated cache directories
+.dart_tool/
+build/
+node_modules/
+
+# Local toolchains
+.tooling/jdk21/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

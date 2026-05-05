@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: vehicle_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      MYSQL_DATABASE: vehicle_maintenance
+    ports:
+      - '3306:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/lib/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vehicle_api
+    restart: always
+    ports:
+      - '8080:8080'
+    depends_on:
+      - db
+    environment:
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
+      - DB_NAME=vehicle_maintenance
+      - PORT=8080
+      - API_KEY=${API_KEY:?API_KEY is required}
+      - ALLOWED_ORIGINS=https://ulbooks.cn,https://www.ulbooks.cn
+      - BAIDU_API_KEY=${BAIDU_API_KEY}
+      - BAIDU_SECRET_KEY=${BAIDU_SECRET_KEY}
+      - UPLOAD_BASE_URL=https://ulbooks.cn/uploads
+    volumes:
+      - uploads:/app/uploads
+
+  nginx:
+    image: nginx:alpine
+    container_name: vehicle_nginx
+    restart: always
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./frontend/build/web:/usr/share/nginx/html
+      - uploads:/usr/share/nginx/html/uploads
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - api
+
+volumes:
+  mysql_data:
+  uploads:
