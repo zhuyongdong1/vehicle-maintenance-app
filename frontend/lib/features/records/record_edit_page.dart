@@ -53,6 +53,7 @@ class _RecordEditPageState extends State<RecordEditPage> {
         .where(
           (item) =>
               item.item.trim().isNotEmpty ||
+              item.quantity > 1 ||
               (item.purchasePrice ?? 0) > 0 ||
               (item.salePrice ?? 0) > 0,
         )
@@ -60,10 +61,10 @@ class _RecordEditPageState extends State<RecordEditPage> {
   }
 
   double get _purchaseTotal =>
-      _feeItems.fold(0, (sum, item) => sum + (item.purchasePrice ?? 0));
+      _feeItems.fold(0, (sum, item) => sum + item.purchaseTotal);
 
   double get _saleTotal =>
-      _feeItems.fold(0, (sum, item) => sum + (item.salePrice ?? 0));
+      _feeItems.fold(0, (sum, item) => sum + item.saleTotal);
 
   Future<void> _loadData() async {
     setState(() => _loading = true);
@@ -312,8 +313,6 @@ class _RecordEditPageState extends State<RecordEditPage> {
   Widget _buildFeeTable() {
     return Column(
       children: [
-        const _FeeTableHeader(),
-        const SizedBox(height: 8),
         for (var i = 0; i < _feeRows.length; i++) _buildFeeRow(i),
         Align(
           alignment: Alignment.centerLeft,
@@ -342,55 +341,75 @@ class _RecordEditPageState extends State<RecordEditPage> {
   Widget _buildFeeRow(int index) {
     final row = _feeRows[index];
     final canDelete = _feeRows.length > 1;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.bgLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.divider),
+      ),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            flex: 5,
-            child: TextFormField(
-              controller: row.item,
-              decoration: const InputDecoration(hintText: '项目'),
-            ),
+          TextFormField(
+            controller: row.item,
+            maxLines: 2,
+            minLines: 1,
+            decoration: InputDecoration(labelText: '项目 ${index + 1}'),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 3,
-            child: TextFormField(
-              controller: row.purchasePrice,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  controller: row.quantity,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: '数量'),
+                  onChanged: (_) => setState(() {}),
+                ),
               ),
-              decoration: const InputDecoration(
-                prefixText: '¥',
-                hintText: '进价',
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 3,
+                child: TextFormField(
+                  controller: row.purchasePrice,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    prefixText: '¥',
+                    labelText: '进价',
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
               ),
-              onChanged: (_) => setState(() {}),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 3,
-            child: TextFormField(
-              controller: row.salePrice,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 3,
+                child: TextFormField(
+                  controller: row.salePrice,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    prefixText: '¥',
+                    labelText: '售价',
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
               ),
-              decoration: const InputDecoration(
-                prefixText: '¥',
-                hintText: '售价',
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: '删除',
+                onPressed: canDelete
+                    ? () => setState(() => _feeRows.removeAt(index).dispose())
+                    : null,
+                icon: const Icon(Icons.delete_outline_rounded),
               ),
-              onChanged: (_) => setState(() {}),
-            ),
-          ),
-          const SizedBox(width: 4),
-          IconButton(
-            tooltip: '删除',
-            onPressed: canDelete
-                ? () => setState(() => _feeRows.removeAt(index).dispose())
-                : null,
-            icon: const Icon(Icons.delete_outline_rounded),
+            ],
           ),
         ],
       ),
@@ -433,6 +452,7 @@ class _RecordEditPageState extends State<RecordEditPage> {
 
 class _FeeRowControllers {
   final item = TextEditingController();
+  final quantity = TextEditingController(text: '1');
   final purchasePrice = TextEditingController();
   final salePrice = TextEditingController();
 
@@ -441,6 +461,7 @@ class _FeeRowControllers {
   factory _FeeRowControllers.fromFeeItem(RecordFeeItem feeItem) {
     return _FeeRowControllers()
       ..item.text = feeItem.item
+      ..quantity.text = feeItem.quantity.toString()
       ..purchasePrice.text = feeItem.purchasePrice?.toString() ?? ''
       ..salePrice.text = feeItem.salePrice?.toString() ?? '';
   }
@@ -448,6 +469,7 @@ class _FeeRowControllers {
   RecordFeeItem toFeeItem() {
     return RecordFeeItem(
       item: item.text.trim(),
+      quantity: _quantityValue(quantity.text),
       purchasePrice: double.tryParse(purchasePrice.text),
       salePrice: double.tryParse(salePrice.text),
     );
@@ -455,32 +477,15 @@ class _FeeRowControllers {
 
   void dispose() {
     item.dispose();
+    quantity.dispose();
     purchasePrice.dispose();
     salePrice.dispose();
   }
 }
 
-class _FeeTableHeader extends StatelessWidget {
-  const _FeeTableHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    const style = TextStyle(
-      color: AppTheme.textSecondary,
-      fontSize: 12,
-      fontWeight: FontWeight.w800,
-    );
-    return const Row(
-      children: [
-        Expanded(flex: 5, child: Text('项目', style: style)),
-        SizedBox(width: 8),
-        Expanded(flex: 3, child: Text('进价', style: style)),
-        SizedBox(width: 8),
-        Expanded(flex: 3, child: Text('售价', style: style)),
-        SizedBox(width: 52),
-      ],
-    );
-  }
+int _quantityValue(String value) {
+  final parsed = int.tryParse(value.trim()) ?? 1;
+  return parsed <= 0 ? 1 : parsed;
 }
 
 class _FeeTotal extends StatelessWidget {

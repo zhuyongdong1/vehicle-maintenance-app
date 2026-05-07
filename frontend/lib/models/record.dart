@@ -2,14 +2,21 @@ import 'dart:convert';
 
 class RecordFeeItem {
   final String item;
+  final int quantity;
   final double? purchasePrice;
   final double? salePrice;
 
-  RecordFeeItem({required this.item, this.purchasePrice, this.salePrice});
+  RecordFeeItem({
+    required this.item,
+    this.quantity = 1,
+    this.purchasePrice,
+    this.salePrice,
+  });
 
   factory RecordFeeItem.fromJson(Map<String, dynamic> json) {
     return RecordFeeItem(
       item: json['item']?.toString() ?? '',
+      quantity: _intValue(json['quantity'], fallback: 1),
       purchasePrice: json['purchase_price'] != null
           ? (json['purchase_price'] as num).toDouble()
           : null,
@@ -19,8 +26,13 @@ class RecordFeeItem {
     );
   }
 
+  double get purchaseTotal => (purchasePrice ?? 0) * quantity;
+
+  double get saleTotal => (salePrice ?? 0) * quantity;
+
   Map<String, dynamic> toJson() => {
     'item': item,
+    'quantity': quantity,
     'purchase_price': purchasePrice,
     'sale_price': salePrice,
   };
@@ -133,4 +145,10 @@ class Record {
       return const [];
     }
   }
+}
+
+int _intValue(dynamic value, {int fallback = 0}) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '') ?? fallback;
 }

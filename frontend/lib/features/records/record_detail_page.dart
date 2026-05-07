@@ -122,8 +122,6 @@ class _RecordDetailPageState extends State<RecordDetailPage> {
             child: Column(
               children: [
                 if (r.feeItems.isNotEmpty) ...[
-                  const _FeeTableHeader(),
-                  const SizedBox(height: 8),
                   for (final item in r.feeItems) _FeeRow(item: item),
                   const Divider(height: 24),
                 ],
@@ -472,26 +470,6 @@ class _RecordDetailPageState extends State<RecordDetailPage> {
   }
 }
 
-class _FeeTableHeader extends StatelessWidget {
-  const _FeeTableHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    const style = TextStyle(
-      color: AppTheme.textSecondary,
-      fontSize: 12,
-      fontWeight: FontWeight.w800,
-    );
-    return const Row(
-      children: [
-        Expanded(flex: 5, child: Text('项目', style: style)),
-        Expanded(flex: 3, child: Text('进价', style: style)),
-        Expanded(flex: 3, child: Text('售价', style: style)),
-      ],
-    );
-  }
-}
-
 class _FeeRow extends StatelessWidget {
   final RecordFeeItem item;
 
@@ -499,27 +477,78 @@ class _FeeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
-      child: Row(
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.bgLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            flex: 5,
-            child: Text(
-              item.item.isEmpty ? '-' : item.item,
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
+          Text(
+            item.item.isEmpty ? '-' : item.item,
+            style: const TextStyle(fontWeight: FontWeight.w800),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
-          Expanded(
-            flex: 3,
-            child: Text('¥${(item.purchasePrice ?? 0).toStringAsFixed(2)}'),
-          ),
-          Expanded(
-            flex: 3,
-            child: Text('¥${(item.salePrice ?? 0).toStringAsFixed(2)}'),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _FeeValue(label: '数量', value: '${item.quantity}'),
+              ),
+              Expanded(
+                child: _FeeValue(
+                  label: '进价',
+                  value: '¥${item.purchaseTotal.toStringAsFixed(2)}',
+                ),
+              ),
+              Expanded(
+                child: _FeeValue(
+                  label: '售价',
+                  value: '¥${item.saleTotal.toStringAsFixed(2)}',
+                ),
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+}
+
+class _FeeValue extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _FeeValue({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppTheme.textSecondary,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          style: const TextStyle(
+            color: AppTheme.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
     );
   }
 }
