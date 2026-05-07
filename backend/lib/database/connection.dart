@@ -62,6 +62,11 @@ class Database {
       'fee_items',
       'ALTER TABLE records ADD COLUMN fee_items TEXT NULL COMMENT "费用明细JSON" AFTER parts',
     );
+    await _addColumnIfMissing(
+      'records',
+      'status',
+      'ALTER TABLE records ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT "pending" COMMENT "工单状态: pending/repairing/completed/settled" AFTER category_id',
+    );
     await _createInventoryTablesIfMissing();
   }
 
@@ -92,15 +97,13 @@ class Database {
     if (_connection == null) throw Exception('Database not connected');
     final tableName = _sqlLiteral(table);
     final columnName = _sqlLiteral(column);
-    final columns = await _connection!.query(
-      '''
+    final columns = await _connection!.query('''
       SELECT COUNT(*) as count
       FROM information_schema.COLUMNS
       WHERE TABLE_SCHEMA = DATABASE()
         AND TABLE_NAME = '$tableName'
         AND COLUMN_NAME = '$columnName'
-      ''',
-    );
+      ''');
     if (columns.isEmpty) return false;
     final count = columns.first['count'];
     return int.tryParse(count.toString()) != 0;

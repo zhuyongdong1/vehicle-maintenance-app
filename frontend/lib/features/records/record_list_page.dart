@@ -228,9 +228,7 @@ class _RecordListPageState extends State<RecordListPage> {
   }
 
   Widget _buildCard(Record r) {
-    final settled = r.cost != null && r.cost! > 0;
-    final statusColor = settled ? AppTheme.success : AppTheme.warning;
-    final statusLabel = settled ? '待收款' : '待报价';
+    final statusMeta = _statusMeta(r);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Dismissible(
@@ -297,7 +295,7 @@ class _RecordListPageState extends State<RecordListPage> {
                       ],
                     ),
                   ),
-                  StatusPill(label: statusLabel, color: statusColor),
+                  StatusPill(label: statusMeta.$1, color: statusMeta.$2),
                 ],
               ),
               const SizedBox(height: 14),
@@ -370,9 +368,7 @@ class _RecordListPageState extends State<RecordListPage> {
                   _CardAction(
                     icon: Icons.check_circle_rounded,
                     label: '完工',
-                    onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('当前版本未接入工单状态接口')),
-                    ),
+                    onTap: () => _updateStatus(r, 'completed'),
                   ),
                 ],
               ),
@@ -381,6 +377,36 @@ class _RecordListPageState extends State<RecordListPage> {
         ),
       ),
     );
+  }
+
+  (String, Color) _statusMeta(Record record) {
+    return switch (record.status) {
+      'repairing' => ('维修中', AppTheme.secondary),
+      'completed' => ('待收款', AppTheme.success),
+      'settled' => ('已结算', AppTheme.primary),
+      _ => (
+        record.cost != null && record.cost! > 0 ? '待收款' : '待报价',
+        AppTheme.warning,
+      ),
+    };
+  }
+
+  Future<void> _updateStatus(Record record, String status) async {
+    final id = record.id;
+    if (id == null) return;
+    try {
+      await _recordApi.updateStatus(id, status);
+      await _loadData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('工单状态已更新')));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('工单状态更新失败')));
+    }
   }
 
   Widget _slideAction({

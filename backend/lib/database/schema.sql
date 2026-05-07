@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS records (
     id INT AUTO_INCREMENT PRIMARY KEY,
     vehicle_id INT NOT NULL COMMENT '车辆ID',
     category_id INT COMMENT '维修分类ID',
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT '工单状态: pending/repairing/completed/settled',
     items TEXT COMMENT '维修项目',
     cost DECIMAL(10,2) COMMENT '售价合计',
     purchase_cost DECIMAL(10,2) COMMENT '进价合计',

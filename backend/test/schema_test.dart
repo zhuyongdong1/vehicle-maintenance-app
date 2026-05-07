@@ -20,4 +20,11 @@ void main() {
     expect(inventoryItemsIndex, lessThan(transactionsIndex));
     expect(recordsIndex, lessThan(transactionsIndex));
   });
+
+  test('records table includes workflow status column', () {
+    final schema = File('lib/database/schema.sql').readAsStringSync();
+
+    expect(schema, contains('status VARCHAR(20) NOT NULL DEFAULT'));
+    expect(schema, contains('pending/repairing/completed/settled'));
+  });
 }

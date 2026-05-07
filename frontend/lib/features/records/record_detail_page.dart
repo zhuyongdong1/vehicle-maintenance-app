@@ -259,7 +259,7 @@ class _RecordDetailPageState extends State<RecordDetailPage> {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: _notConnected,
+                  onPressed: () => _updateStatus('repairing'),
                   icon: const Icon(Icons.play_arrow_rounded, size: 18),
                   label: const Text('开始维修'),
                 ),
@@ -267,7 +267,7 @@ class _RecordDetailPageState extends State<RecordDetailPage> {
               const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: _notConnected,
+                  onPressed: () => _updateStatus('completed'),
                   icon: const Icon(Icons.check_rounded, size: 18),
                   label: const Text('完工'),
                 ),
@@ -288,7 +288,7 @@ class _RecordDetailPageState extends State<RecordDetailPage> {
   }
 
   Widget _buildHeader(Record r) {
-    final hasAmount = r.cost != null && r.cost! > 0;
+    final statusMeta = _statusMeta(r);
     return AppSurfaceCard(
       radius: AppRadius.large,
       padding: const EdgeInsets.all(20),
@@ -348,7 +348,7 @@ class _RecordDetailPageState extends State<RecordDetailPage> {
                   ],
                 ),
               ),
-              StatusPill(label: hasAmount ? '待结算' : '待报价', color: Colors.white),
+              StatusPill(label: statusMeta.$1, color: Colors.white),
             ],
           ),
           const SizedBox(height: 20),
@@ -373,9 +373,9 @@ class _RecordDetailPageState extends State<RecordDetailPage> {
   Widget _buildTimeline(Record r) {
     final steps = [
       ('接车开单', true, AppTheme.primary),
-      ('维修施工', true, AppTheme.secondary),
-      ('完工质检', (r.notes ?? '').isNotEmpty, AppTheme.warning),
-      ('收银结算', r.cost != null && r.cost! > 0, AppTheme.success),
+      ('维修施工', _statusIndex(r.status) >= 1, AppTheme.secondary),
+      ('完工质检', _statusIndex(r.status) >= 2, AppTheme.warning),
+      ('收银结算', _statusIndex(r.status) >= 3, AppTheme.success),
     ];
     return Column(
       children: [
@@ -434,10 +434,41 @@ class _RecordDetailPageState extends State<RecordDetailPage> {
     );
   }
 
-  void _notConnected() {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('当前版本未接入工单状态流转接口')));
+  (String, Color) _statusMeta(Record record) {
+    return switch (record.status) {
+      'repairing' => ('维修中', AppTheme.secondary),
+      'completed' => ('待结算', AppTheme.warning),
+      'settled' => ('已结算', AppTheme.success),
+      _ => (
+        record.cost != null && record.cost! > 0 ? '待结算' : '待报价',
+        AppTheme.warning,
+      ),
+    };
+  }
+
+  int _statusIndex(String status) {
+    return switch (status) {
+      'repairing' => 1,
+      'completed' => 2,
+      'settled' => 3,
+      _ => 0,
+    };
+  }
+
+  Future<void> _updateStatus(String status) async {
+    try {
+      final updated = await _api.updateStatus(widget.recordId, status);
+      if (!mounted) return;
+      setState(() => _record = updated);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('工单状态已更新')));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('工单状态更新失败')));
+    }
   }
 }
 

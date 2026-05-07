@@ -59,11 +59,12 @@ class RecordHandler {
   static Future<Response> create(Request request) async {
     final body = jsonDecode(await request.readAsString());
     final id = await Database.instance.insert(
-      '''INSERT INTO records (vehicle_id, category_id, items, cost, purchase_cost, mileage, record_date, workshop, notes, parts, fee_items, reminder_date, reminder_mileage)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+      '''INSERT INTO records (vehicle_id, category_id, status, items, cost, purchase_cost, mileage, record_date, workshop, notes, parts, fee_items, reminder_date, reminder_mileage)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
       [
         body['vehicle_id'],
         body['category_id'],
+        _normalizeStatus(body['status']) ?? 'pending',
         body['items'],
         body['cost'],
         body['purchase_cost'],
@@ -122,10 +123,11 @@ class RecordHandler {
     final body = jsonDecode(await request.readAsString());
     final recordId = int.parse(id);
     final affected = await Database.instance.execute(
-      '''UPDATE records SET vehicle_id=?, category_id=?, items=?, cost=?, purchase_cost=?, mileage=?, record_date=?, workshop=?, notes=?, parts=?, fee_items=?, reminder_date=?, reminder_mileage=? WHERE id=?''',
+      '''UPDATE records SET vehicle_id=?, category_id=?, status=?, items=?, cost=?, purchase_cost=?, mileage=?, record_date=?, workshop=?, notes=?, parts=?, fee_items=?, reminder_date=?, reminder_mileage=? WHERE id=?''',
       [
         body['vehicle_id'],
         body['category_id'],
+        _normalizeStatus(body['status']) ?? 'pending',
         body['items'],
         body['cost'],
         body['purchase_cost'],
@@ -151,6 +153,28 @@ class RecordHandler {
     return Response.ok(jsonEncode(_toJson(results.first)));
   }
 
+  static Future<Response> updateStatus(Request request, String id) async {
+    final body = jsonDecode(await request.readAsString());
+    final status = _normalizeStatus(body['status']);
+    if (status == null) {
+      return Response(400, body: jsonEncode({'error': 'Invalid status'}));
+    }
+    final recordId = int.parse(id);
+    final affected = await Database.instance.execute(
+      'UPDATE records SET status = ? WHERE id = ?',
+      [status, recordId],
+    );
+    final results = await Database.instance.query(
+      '''SELECT r.*, v.plate_number, CONCAT(COALESCE(v.brand,''), ' ', COALESCE(v.model,'')) as vehicle_info, c.name as category_name
+         FROM records r LEFT JOIN vehicles v ON r.vehicle_id = v.id LEFT JOIN categories c ON r.category_id = c.id WHERE r.id = ?''',
+      [recordId],
+    );
+    if (affected == 0 && results.isEmpty) {
+      return Response.notFound(jsonEncode({'error': 'Not found'}));
+    }
+    return Response.ok(jsonEncode(_toJson(results.first)));
+  }
+
   static Future<Response> delete(Request request, String id) async {
     final affected = await Database.instance.execute(
       'DELETE FROM records WHERE id = ?',
@@ -166,6 +190,7 @@ class RecordHandler {
     'id': r['id'],
     'vehicle_id': r['vehicle_id'],
     'category_id': r['category_id'],
+    'status': r['status']?.toString() ?? 'pending',
     'category_name': r['category_name']?.toString(),
     'items': r['items']?.toString(),
     'cost': r['cost'] != null ? double.tryParse(r['cost'].toString()) : null,
@@ -195,6 +220,14 @@ class RecordHandler {
 
   static double _amount(dynamic value) =>
       double.tryParse(value?.toString() ?? '') ?? 0;
+
+  static String? _normalizeStatus(dynamic value) {
+    final status = value?.toString();
+    if (status == null || status.isEmpty) return null;
+    return {'pending', 'repairing', 'completed', 'settled'}.contains(status)
+        ? status
+        : null;
+  }
 
   static Future<int?> _ledgerCategoryId(String type, String name) async {
     final results = await Database.instance.query(

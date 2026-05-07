@@ -35,6 +35,7 @@ Router createRouter() {
   router.get('/api/records/<id>', RecordHandler.getById);
   router.post('/api/records', RecordHandler.create);
   router.put('/api/records/<id>', RecordHandler.update);
+  router.patch('/api/records/<id>/status', RecordHandler.updateStatus);
   router.delete('/api/records/<id>', RecordHandler.delete);
 
   // Ledger

@@ -35,6 +35,14 @@ class RecordApi {
     return Record.fromJson(res.data);
   }
 
+  Future<Record> updateStatus(int id, String status) async {
+    final res = await _client.patch(
+      '/records/$id/status',
+      data: {'status': status},
+    );
+    return Record.fromJson(res.data);
+  }
+
   Future<void> delete(int id) async {
     await _client.delete('/records/$id');
   }

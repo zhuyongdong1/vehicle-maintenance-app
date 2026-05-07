@@ -30,6 +30,7 @@ class Record {
   final int? id;
   final int vehicleId;
   final int? categoryId;
+  final String status;
   final String? categoryName;
   final String? items;
   final double? cost;
@@ -51,6 +52,7 @@ class Record {
     this.id,
     required this.vehicleId,
     this.categoryId,
+    this.status = 'pending',
     this.categoryName,
     this.items,
     this.cost,
@@ -74,6 +76,7 @@ class Record {
       id: json['id'],
       vehicleId: json['vehicle_id'] ?? 0,
       categoryId: json['category_id'],
+      status: json['status']?.toString() ?? 'pending',
       categoryName: json['category_name'],
       items: json['items'],
       cost: json['cost'] != null ? (json['cost'] as num).toDouble() : null,
@@ -100,6 +103,7 @@ class Record {
       if (id != null) 'id': id,
       'vehicle_id': vehicleId,
       'category_id': categoryId,
+      'status': status,
       'items': items,
       'cost': cost,
       'purchase_cost': purchaseCost,

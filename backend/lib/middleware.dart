@@ -7,7 +7,8 @@ Middleware corsMiddleware() {
       final origin = request.headers['origin'];
       final headers = <String, String>{
         'Vary': 'Origin',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Methods':
+            'GET, POST, PUT, PATCH, DELETE, OPTIONS',
         'Access-Control-Allow-Headers':
             'Content-Type, Authorization, X-API-Key',
       };
