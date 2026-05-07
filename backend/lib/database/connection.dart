@@ -71,18 +71,42 @@ class Database {
     String alterSql,
   ) async {
     if (_connection == null) throw Exception('Database not connected');
-    if (!await _columnExists(table, column)) {
-      await _connection!.query(alterSql);
+    var exists = false;
+    try {
+      exists = await _columnExists(table, column);
+    } catch (e) {
+      print('Column existence check failed for $table.$column: $e');
+    }
+    if (!exists) {
+      try {
+        await _connection!.query(alterSql);
+      } catch (e) {
+        if (!e.toString().contains('Duplicate column name')) {
+          rethrow;
+        }
+      }
     }
   }
 
   Future<bool> _columnExists(String table, String column) async {
     if (_connection == null) throw Exception('Database not connected');
+    final tableName = _sqlLiteral(table);
+    final columnName = _sqlLiteral(column);
     final columns = await _connection!.query(
-      "SHOW COLUMNS FROM `$table` LIKE '$column'",
+      '''
+      SELECT COUNT(*) as count
+      FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = '$tableName'
+        AND COLUMN_NAME = '$columnName'
+      ''',
     );
-    return columns.isNotEmpty;
+    if (columns.isEmpty) return false;
+    final count = columns.first['count'];
+    return int.tryParse(count.toString()) != 0;
   }
+
+  String _sqlLiteral(String value) => value.replaceAll("'", "''");
 
   Future<void> _createInventoryTablesIfMissing() async {
     if (_connection == null) throw Exception('Database not connected');
