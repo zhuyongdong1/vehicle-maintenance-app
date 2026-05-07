@@ -25,6 +25,12 @@ class _RecordAddPageState extends State<RecordAddPage> {
   final _workshopController = TextEditingController();
   final _notesController = TextEditingController();
   final _reminderMileageController = TextEditingController();
+  final _plateController = TextEditingController();
+  final _vinController = TextEditingController();
+  final _brandController = TextEditingController();
+  final _modelController = TextEditingController();
+  final _ownerNameController = TextEditingController();
+  final _ownerPhoneController = TextEditingController();
   final List<_FeeRowControllers> _feeRows = [_FeeRowControllers()];
 
   final _vehicleApi = VehicleApi();
@@ -37,12 +43,14 @@ class _RecordAddPageState extends State<RecordAddPage> {
   String _recordDate = '';
   String? _reminderDate;
   bool _createLedger = true;
+  bool _useExistingVehicle = false;
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     _recordDate = _format(DateTime.now());
+    _useExistingVehicle = widget.vehicleId != null;
     _loadVehicles();
     _loadCategories();
   }
@@ -90,12 +98,6 @@ class _RecordAddPageState extends State<RecordAddPage> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedVehicle == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请选择车辆')));
-      return;
-    }
     if (_feeItems.isEmpty || _saleTotal <= 0) {
       ScaffoldMessenger.of(
         context,
@@ -104,11 +106,16 @@ class _RecordAddPageState extends State<RecordAddPage> {
     }
     setState(() => _saving = true);
     try {
+      final vehicle = await _resolveVehicleForRecord();
+      if (vehicle == null) {
+        if (mounted) setState(() => _saving = false);
+        return;
+      }
       final feeItems = _feeItems;
       await apiClientProvider.post(
         '/records',
         data: {
-          'vehicle_id': _selectedVehicle!.id,
+          'vehicle_id': vehicle.id,
           'category_id': _selectedCategory?.id,
           'items': _itemsController.text,
           'cost': _saleTotal,
@@ -140,6 +147,54 @@ class _RecordAddPageState extends State<RecordAddPage> {
     if (mounted) setState(() => _saving = false);
   }
 
+  Future<Vehicle?> _resolveVehicleForRecord() async {
+    if (_useExistingVehicle) {
+      if (_selectedVehicle == null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('请选择车辆')));
+        return null;
+      }
+      return _selectedVehicle;
+    }
+
+    final plateNumber = _plateController.text.trim();
+    final existingVehicle = _findExistingVehicleByPlate(plateNumber);
+    if (existingVehicle != null) {
+      _selectedVehicle = existingVehicle;
+      return existingVehicle;
+    }
+
+    final vehicle = await _vehicleApi.create(
+      Vehicle(
+        plateNumber: plateNumber,
+        vin: _emptyToNull(_vinController.text),
+        brand: _emptyToNull(_brandController.text),
+        model: _emptyToNull(_modelController.text),
+        ownerName: _emptyToNull(_ownerNameController.text),
+        ownerPhone: _emptyToNull(_ownerPhoneController.text),
+      ),
+    );
+    _vehicles = [vehicle, ..._vehicles];
+    _selectedVehicle = vehicle;
+    return vehicle;
+  }
+
+  Vehicle? _findExistingVehicleByPlate(String plateNumber) {
+    final normalizedPlate = plateNumber.toUpperCase();
+    for (final vehicle in _vehicles) {
+      if (vehicle.plateNumber.trim().toUpperCase() == normalizedPlate) {
+        return vehicle;
+      }
+    }
+    return null;
+  }
+
+  String? _emptyToNull(String value) {
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -154,7 +209,7 @@ class _RecordAddPageState extends State<RecordAddPage> {
             const SectionHeader(title: '车辆信息', subtitle: '先确认车辆，减少后续录入错误'),
             AppSurfaceCard(
               padding: const EdgeInsets.all(16),
-              child: _buildVehicleSelector(),
+              child: _buildVehicleSection(),
             ),
             const SizedBox(height: 22),
             const SectionHeader(title: '维修项目', subtitle: '记录项目、分类、日期和工时场地'),
@@ -355,6 +410,61 @@ class _RecordAddPageState extends State<RecordAddPage> {
     );
   }
 
+  Widget _buildVehicleSection() {
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment<bool>(
+                value: false,
+                icon: Icon(Icons.add_rounded),
+                label: Text('新录车辆'),
+              ),
+              ButtonSegment<bool>(
+                value: true,
+                icon: Icon(Icons.folder_shared_rounded),
+                label: Text('选择已有'),
+              ),
+            ],
+            selected: {_useExistingVehicle},
+            onSelectionChanged: (value) {
+              setState(() => _useExistingVehicle = value.first);
+            },
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (_useExistingVehicle)
+          _buildVehicleSelector()
+        else
+          _buildInlineVehicleFields(),
+      ],
+    );
+  }
+
+  Widget _buildInlineVehicleFields() {
+    return Column(
+      children: [
+        _field('车牌号 *', _plateController, hint: '例如：沪A12345'),
+        _field('车主姓名', _ownerNameController),
+        _field(
+          '联系电话',
+          _ownerPhoneController,
+          keyboardType: TextInputType.phone,
+        ),
+        Row(
+          children: [
+            Expanded(child: _field('品牌', _brandController)),
+            const SizedBox(width: 10),
+            Expanded(child: _field('车型', _modelController)),
+          ],
+        ),
+        _field('VIN / 车架号', _vinController),
+      ],
+    );
+  }
+
   Widget _buildCategorySelector() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -538,6 +648,12 @@ class _RecordAddPageState extends State<RecordAddPage> {
     _workshopController.dispose();
     _notesController.dispose();
     _reminderMileageController.dispose();
+    _plateController.dispose();
+    _vinController.dispose();
+    _brandController.dispose();
+    _modelController.dispose();
+    _ownerNameController.dispose();
+    _ownerPhoneController.dispose();
     for (final row in _feeRows) {
       row.dispose();
     }

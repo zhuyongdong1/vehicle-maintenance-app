@@ -5,11 +5,13 @@ import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../../core/api/dashboard_api.dart';
+import '../../core/api/inventory_api.dart';
 import '../../core/api/ocr_api.dart';
 import '../../core/api/vehicle_api.dart';
 import '../../core/theme.dart';
 import '../../core/ui/app_ui.dart';
 import '../../models/dashboard_stats.dart';
+import '../../models/inventory.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -20,9 +22,11 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   final _api = DashboardApi();
+  final _inventoryApi = InventoryApi();
   final _ocrApi = OcrApi();
   final _vehicleApi = VehicleApi();
   DashboardStats? _stats;
+  InventoryStats? _inventoryStats;
   bool _loading = true;
   bool _scanning = false;
 
@@ -34,10 +38,12 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Future<void> _loadData() async {
     setState(() => _loading = true);
+    DashboardStats? stats;
+    InventoryStats? inventoryStats;
     try {
-      _stats = await _api.getStats();
+      stats = await _api.getStats();
     } catch (e) {
-      _stats = DashboardStats(
+      stats = DashboardStats(
         monthIncome: 0,
         monthExpense: 0,
         monthProfit: 0,
@@ -47,7 +53,18 @@ class _DashboardPageState extends State<DashboardPage> {
         recentLedger: [],
       );
     }
-    if (mounted) setState(() => _loading = false);
+    try {
+      inventoryStats = await _inventoryApi.getStats();
+    } catch (_) {
+      inventoryStats = null;
+    }
+    if (mounted) {
+      setState(() {
+        _stats = stats;
+        _inventoryStats = inventoryStats;
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -219,6 +236,9 @@ class _DashboardPageState extends State<DashboardPage> {
     final todayIncome = _todayIncome(s);
     final todayCount = _todayRecordCount(s);
     final reminderCount = s?.reminders.length ?? 0;
+    final inventoryStats = _inventoryStats;
+    final warningCount = inventoryStats?.warningCount ?? 0;
+    final stockCount = inventoryStats?.stockCount ?? 0;
     return GridView.count(
       crossAxisCount: 2,
       shrinkWrap: true,
@@ -248,12 +268,16 @@ class _DashboardPageState extends State<DashboardPage> {
           icon: Icons.notifications_active_rounded,
           color: AppTheme.warning,
         ),
-        const MetricCard(
+        MetricCard(
           title: '库存预警',
-          value: '待接入',
-          subtitle: '配件库存模块',
+          value: '$warningCount 项',
+          subtitle: inventoryStats == null
+              ? '库存数据暂不可用'
+              : warningCount > 0
+              ? '需补货 · $stockCount 件'
+              : '库存正常 · $stockCount 件',
           icon: Icons.inventory_2_rounded,
-          color: AppTheme.danger,
+          color: warningCount > 0 ? AppTheme.danger : AppTheme.success,
         ),
       ],
     );
