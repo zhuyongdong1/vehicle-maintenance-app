@@ -43,11 +43,17 @@ class _VehicleListPageState extends State<VehicleListPage> {
   }
 
   Future<void> _deleteVehicle(Vehicle v) async {
+    if ((v.recordCount ?? 0) > 0) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('该车辆已有工单，不能删除')));
+      return;
+    }
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('确认删除'),
-        content: Text('确定删除 ${v.plateNumber}？此操作不可撤销。'),
+        content: Text('确定删除 ${v.plateNumber}？仅无工单车辆允许删除。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -74,7 +80,7 @@ class _VehicleListPageState extends State<VehicleListPage> {
         if (mounted) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(const SnackBar(content: Text('删除失败')));
+          ).showSnackBar(const SnackBar(content: Text('删除失败：车辆可能已有工单')));
         }
       }
     }
@@ -277,10 +283,10 @@ class _VehicleListPageState extends State<VehicleListPage> {
                   ),
                 ),
                 IconButton(
-                  tooltip: '删除',
+                  tooltip: active ? '已有工单，不能删除' : '删除',
                   onPressed: () => _deleteVehicle(v),
                   icon: const Icon(
-                    Icons.more_horiz_rounded,
+                    Icons.delete_outline_rounded,
                     color: AppTheme.textHint,
                   ),
                 ),

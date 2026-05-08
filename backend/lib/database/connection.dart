@@ -14,14 +14,7 @@ class Database {
 
   Future<void> initialize() async {
     try {
-      final settings = ConnectionSettings(
-        host: AppConfig.dbHost,
-        port: AppConfig.dbPort,
-        user: AppConfig.dbUser,
-        password: AppConfig.dbPassword,
-        db: AppConfig.dbName,
-      );
-      _connection = await MySqlConnection.connect(settings);
+      _connection = await _connect();
       await _connection!.query('SET NAMES utf8mb4');
       if (AppConfig.runSchemaMigrations) {
         await _ensureSchemaUpdates();
@@ -34,20 +27,60 @@ class Database {
     }
   }
 
-  Future<Results> query(String sql, [List<Object?>? params]) async {
+  ConnectionSettings get _settings => ConnectionSettings(
+    host: AppConfig.dbHost,
+    port: AppConfig.dbPort,
+    user: AppConfig.dbUser,
+    password: AppConfig.dbPassword,
+    db: AppConfig.dbName,
+  );
+
+  Future<MySqlConnection> _connect() => MySqlConnection.connect(_settings);
+
+  Future<T> _withReconnect<T>(
+    Future<T> Function(MySqlConnection connection) operation,
+  ) async {
     if (_connection == null) throw Exception('Database not connected');
-    return await _connection!.query(sql, params);
+    try {
+      return await operation(_connection!);
+    } catch (e) {
+      if (!_isConnectionClosed(e)) rethrow;
+      await _closeQuietly();
+      _connection = await _connect();
+      await _connection!.query('SET NAMES utf8mb4');
+      return await operation(_connection!);
+    }
+  }
+
+  bool _isConnectionClosed(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('socket') && message.contains('closed') ||
+        message.contains('connection') && message.contains('closed') ||
+        message.contains('cannot write');
+  }
+
+  Future<void> _closeQuietly() async {
+    try {
+      await _connection?.close();
+    } catch (_) {}
+    _connection = null;
+  }
+
+  Future<Results> query(String sql, [List<Object?>? params]) async {
+    return _withReconnect((connection) => connection.query(sql, params));
   }
 
   Future<int> insert(String sql, [List<Object?>? params]) async {
-    if (_connection == null) throw Exception('Database not connected');
-    final result = await _connection!.query(sql, params);
+    final result = await _withReconnect(
+      (connection) => connection.query(sql, params),
+    );
     return result.insertId ?? 0;
   }
 
   Future<int> execute(String sql, [List<Object?>? params]) async {
-    if (_connection == null) throw Exception('Database not connected');
-    final result = await _connection!.query(sql, params);
+    final result = await _withReconnect(
+      (connection) => connection.query(sql, params),
+    );
     return result.affectedRows ?? 0;
   }
 

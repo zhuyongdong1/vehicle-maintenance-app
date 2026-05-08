@@ -53,11 +53,22 @@ class VehicleHandler {
 
   static Future<Response> create(Request request) async {
     final body = jsonDecode(await request.readAsString());
+    final plateNumber = body['plate_number']?.toString().trim();
+    if (plateNumber == null || plateNumber.isEmpty) {
+      return Response(400, body: jsonEncode({'error': '车牌号不能为空'}));
+    }
+    final existing = await Database.instance.query(
+      'SELECT * FROM vehicles WHERE plate_number = ? LIMIT 1',
+      [plateNumber],
+    );
+    if (existing.isNotEmpty) {
+      return Response.ok(jsonEncode(_toJson(existing.first)));
+    }
     final id = await Database.instance.insert(
       '''INSERT INTO vehicles (plate_number, vin, brand, model, year, color, owner_name, owner_phone, photo_url, inspection_date, insurance_date)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
       [
-        body['plate_number'],
+        plateNumber,
         body['vin'],
         body['brand'],
         body['model'],
@@ -109,9 +120,18 @@ class VehicleHandler {
   }
 
   static Future<Response> delete(Request request, String id) async {
+    final vehicleId = int.parse(id);
+    final records = await Database.instance.query(
+      'SELECT COUNT(*) as count FROM records WHERE vehicle_id = ?',
+      [vehicleId],
+    );
+    final recordCount = int.tryParse(records.first['count'].toString()) ?? 0;
+    if (recordCount > 0) {
+      return Response(409, body: jsonEncode({'error': '车辆已有工单，不能删除'}));
+    }
     final affected = await Database.instance.execute(
       'DELETE FROM vehicles WHERE id = ?',
-      [int.parse(id)],
+      [vehicleId],
     );
     if (affected == 0) {
       return Response.notFound(jsonEncode({'error': 'Not found'}));
