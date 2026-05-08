@@ -1,12 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/api/app_update_api.dart';
 import '../../core/api/api_client.dart';
+import '../../core/config.dart';
 import '../../core/theme.dart';
 import '../../core/ui/app_ui.dart';
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  final _updateApi = AppUpdateApi();
+  bool _checkingUpdate = false;
 
   @override
   Widget build(BuildContext context) {
@@ -79,7 +90,7 @@ class SettingsPage extends StatelessWidget {
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: const Text(
-                    'v1.0.0',
+                    'v${AppConfig.appVersion}',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 12,
@@ -127,6 +138,16 @@ class SettingsPage extends StatelessWidget {
           const SectionHeader(title: '业务工具', subtitle: '交付前常用的数据与提醒能力'),
           _buildGroup(
             children: [
+              _buildTile(
+                context: context,
+                icon: Icons.system_update_alt_rounded,
+                color: AppTheme.primary,
+                title: '检查更新',
+                subtitle: _checkingUpdate
+                    ? '正在检查新版本'
+                    : '当前版本 v${AppConfig.appVersion}+${AppConfig.appBuildNumber}',
+                onTap: _checkingUpdate ? () {} : () => _checkUpdate(context),
+              ),
               _buildTile(
                 context: context,
                 icon: Icons.notifications_active_rounded,
@@ -178,6 +199,74 @@ class SettingsPage extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _checkUpdate(BuildContext context) async {
+    setState(() => _checkingUpdate = true);
+    try {
+      final info = await _updateApi.getLatest();
+      if (!context.mounted) return;
+      if (!info.hasUpdate) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已是最新版 v${AppConfig.appVersion}')),
+        );
+        return;
+      }
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('发现新版本 v${info.versionName}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (info.releaseNotes.isNotEmpty) Text(info.releaseNotes),
+              if (info.publishedAt.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  '发布时间：${info.publishedAt}',
+                  style: const TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(info.required ? '稍后安装' : '稍后'),
+            ),
+            FilledButton.icon(
+              onPressed: () async {
+                final url = Uri.parse(info.apkUrl);
+                final launched = await launchUrl(
+                  url,
+                  mode: LaunchMode.externalApplication,
+                );
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (!launched && context.mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('无法打开更新下载地址')));
+                }
+              },
+              icon: const Icon(Icons.download_rounded),
+              label: const Text('下载更新'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('检查更新失败：$e')));
+      }
+    } finally {
+      if (mounted) setState(() => _checkingUpdate = false);
+    }
   }
 
   Future<void> _exportData(BuildContext context) async {

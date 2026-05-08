@@ -1,7 +1,7 @@
 name: vehicle_app
 description: "车辆维修管理APP"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ^3.9.0
@@ -19,6 +19,7 @@ dependencies:
   image_picker: ^1.1.2
   intl: ^0.20.2
   shimmer: ^3.0.0
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

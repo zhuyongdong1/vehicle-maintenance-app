@@ -9,5 +9,16 @@ class AppConfig {
   );
   static const String apiKey = String.fromEnvironment('API_KEY');
   static const String appName = '车辆维修管理';
-  static const String appVersion = '1.0.0';
+  static const String appVersion = String.fromEnvironment(
+    'APP_VERSION',
+    defaultValue: '1.0.1',
+  );
+  static const int appBuildNumber = int.fromEnvironment(
+    'APP_BUILD_NUMBER',
+    defaultValue: 2,
+  );
+  static const String updateManifestUrl = String.fromEnvironment(
+    'APP_UPDATE_MANIFEST_URL',
+    defaultValue: 'https://ulbooks.cn/downloads/app-version.json',
+  );
 }
