@@ -97,6 +97,8 @@ class _RecordAddPageState extends State<RecordAddPage> {
   double get _saleTotal =>
       _feeItems.fold(0, (sum, item) => sum + item.saleTotal);
 
+  double get _profitTotal => _saleTotal - _purchaseTotal;
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (_feeItems.isEmpty || _saleTotal <= 0) {
@@ -536,9 +538,13 @@ class _RecordAddPageState extends State<RecordAddPage> {
             Expanded(
               child: _FeeTotal(label: '进价合计', value: _purchaseTotal),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             Expanded(
               child: _FeeTotal(label: '售价合计', value: _saleTotal),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _FeeTotal(label: '收益合计', value: _profitTotal),
             ),
           ],
         ),
@@ -561,77 +567,86 @@ class _RecordAddPageState extends State<RecordAddPage> {
   Widget _buildFeeRow(int index) {
     final row = _feeRows[index];
     final canDelete = _feeRows.length > 1;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppTheme.bgLight,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.divider),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextFormField(
-            controller: row.item,
-            maxLines: 2,
-            minLines: 1,
-            decoration: InputDecoration(labelText: '项目 ${index + 1}'),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 2,
-                child: TextFormField(
-                  controller: row.quantity,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: '数量'),
-                  onChanged: (_) => setState(() {}),
+    return Dismissible(
+      key: ObjectKey(row),
+      direction: canDelete
+          ? DismissDirection.endToStart
+          : DismissDirection.none,
+      background: const _SwipeDeleteBackground(),
+      onDismissed: (_) {
+        setState(() {
+          final rowIndex = _feeRows.indexOf(row);
+          if (rowIndex == -1) return;
+          final removed = _feeRows.removeAt(rowIndex);
+          removed.dispose();
+        });
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppTheme.bgLight,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppTheme.divider),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextFormField(
+              controller: row.item,
+              maxLines: 2,
+              minLines: 1,
+              decoration: InputDecoration(labelText: '项目 ${index + 1}'),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: TextFormField(
+                    controller: row.quantity,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: '数量'),
+                    onChanged: (_) => setState(() {}),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                flex: 3,
-                child: TextFormField(
-                  controller: row.purchasePrice,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 3,
+                  child: TextFormField(
+                    controller: row.purchasePrice,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      prefixText: '¥',
+                      labelText: '进价',
+                    ),
+                    onChanged: (_) => setState(() {}),
                   ),
-                  decoration: const InputDecoration(
-                    prefixText: '¥',
-                    labelText: '进价',
-                  ),
-                  onChanged: (_) => setState(() {}),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                flex: 3,
-                child: TextFormField(
-                  controller: row.salePrice,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 3,
+                  child: TextFormField(
+                    controller: row.salePrice,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      prefixText: '¥',
+                      labelText: '售价',
+                    ),
+                    onChanged: (_) => setState(() {}),
                   ),
-                  decoration: const InputDecoration(
-                    prefixText: '¥',
-                    labelText: '售价',
-                  ),
-                  onChanged: (_) => setState(() {}),
                 ),
-              ),
-              const SizedBox(width: 4),
-              IconButton(
-                tooltip: '删除',
-                onPressed: canDelete
-                    ? () => setState(() => _feeRows.removeAt(index).dispose())
-                    : null,
-                icon: const Icon(Icons.delete_outline_rounded),
-              ),
-            ],
-          ),
-        ],
+                const SizedBox(width: 8),
+                Expanded(flex: 2, child: _FeeProfit(value: row.profit)),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -695,6 +710,12 @@ class _FeeRowControllers {
     );
   }
 
+  double get profit {
+    final purchase = double.tryParse(purchasePrice.text) ?? 0;
+    final sale = double.tryParse(salePrice.text) ?? 0;
+    return (sale - purchase) * _quantityValue(quantity.text);
+  }
+
   void dispose() {
     item.dispose();
     quantity.dispose();
@@ -706,6 +727,71 @@ class _FeeRowControllers {
 int _quantityValue(String value) {
   final parsed = int.tryParse(value.trim()) ?? 1;
   return parsed <= 0 ? 1 : parsed;
+}
+
+class _FeeProfit extends StatelessWidget {
+  final double value;
+
+  const _FeeProfit({required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = value < 0 ? AppTheme.expense : AppTheme.success;
+    return Container(
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text(
+            '收益',
+            style: TextStyle(
+              color: AppTheme.textSecondary,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 3),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '¥${value.toStringAsFixed(0)}',
+              style: TextStyle(
+                color: color,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SwipeDeleteBackground extends StatelessWidget {
+  const _SwipeDeleteBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(right: 18),
+      decoration: BoxDecoration(
+        color: AppTheme.expense,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      alignment: Alignment.centerRight,
+      child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
+    );
+  }
 }
 
 class _FeeTotal extends StatelessWidget {
@@ -739,9 +825,11 @@ class _FeeTotal extends StatelessWidget {
             '¥${value.toStringAsFixed(2)}',
             style: const TextStyle(
               color: AppTheme.textPrimary,
-              fontSize: 16,
+              fontSize: 14,
               fontWeight: FontWeight.w900,
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
