@@ -1,7 +1,36 @@
 import 'package:mysql1/mysql1.dart';
 import '../config.dart';
 
-class Database {
+abstract class DatabaseExecutor {
+  Future<Results> query(String sql, [List<Object?>? params]);
+  Future<int> insert(String sql, [List<Object?>? params]);
+  Future<int> execute(String sql, [List<Object?>? params]);
+}
+
+class DatabaseSession implements DatabaseExecutor {
+  final MySqlConnection _connection;
+
+  DatabaseSession._(this._connection);
+
+  @override
+  Future<Results> query(String sql, [List<Object?>? params]) {
+    return _connection.query(sql, params);
+  }
+
+  @override
+  Future<int> insert(String sql, [List<Object?>? params]) async {
+    final result = await _connection.query(sql, params);
+    return result.insertId ?? 0;
+  }
+
+  @override
+  Future<int> execute(String sql, [List<Object?>? params]) async {
+    final result = await _connection.query(sql, params);
+    return result.affectedRows ?? 0;
+  }
+}
+
+class Database implements DatabaseExecutor {
   static Database? _instance;
   MySqlConnection? _connection;
 
@@ -66,10 +95,12 @@ class Database {
     _connection = null;
   }
 
+  @override
   Future<Results> query(String sql, [List<Object?>? params]) async {
     return _withReconnect((connection) => connection.query(sql, params));
   }
 
+  @override
   Future<int> insert(String sql, [List<Object?>? params]) async {
     final result = await _withReconnect(
       (connection) => connection.query(sql, params),
@@ -77,11 +108,32 @@ class Database {
     return result.insertId ?? 0;
   }
 
+  @override
   Future<int> execute(String sql, [List<Object?>? params]) async {
     final result = await _withReconnect(
       (connection) => connection.query(sql, params),
     );
     return result.affectedRows ?? 0;
+  }
+
+  Future<T> transaction<T>(
+    Future<T> Function(DatabaseExecutor db) operation,
+  ) async {
+    return _withReconnect((connection) async {
+      await connection.query('START TRANSACTION');
+      try {
+        final result = await operation(DatabaseSession._(connection));
+        await connection.query('COMMIT');
+        return result;
+      } catch (_) {
+        try {
+          await connection.query('ROLLBACK');
+        } catch (rollbackError) {
+          print('Transaction rollback failed: $rollbackError');
+        }
+        rethrow;
+      }
+    });
   }
 
   Future<void> _ensureSchemaUpdates() async {
@@ -99,6 +151,11 @@ class Database {
       'records',
       'status',
       'ALTER TABLE records ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT "pending" COMMENT "工单状态: pending/repairing/completed/settled" AFTER category_id',
+    );
+    await _addColumnIfMissing(
+      'vehicles',
+      'deleted_at',
+      'ALTER TABLE vehicles ADD COLUMN deleted_at DATETIME NULL COMMENT "档案删除时间，软删除保留历史工单" AFTER insurance_date',
     );
     await _createInventoryTablesIfMissing();
   }

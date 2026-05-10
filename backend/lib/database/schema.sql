@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
     photo_url TEXT COMMENT '照片URL',
     inspection_date DATE COMMENT '年检到期日',
     insurance_date DATE COMMENT '保险到期日',
+    deleted_at DATETIME NULL COMMENT '档案删除时间，软删除保留历史工单',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

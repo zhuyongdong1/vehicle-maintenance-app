@@ -315,7 +315,12 @@ class _InventoryPageState extends State<InventoryPage> {
 
   Widget _buildTransactionCard(InventoryTransaction tx) {
     final isIn = tx.type == 'in';
-    final color = isIn ? AppTheme.success : AppTheme.danger;
+    final isAdjust = tx.type == 'adjust';
+    final color = isAdjust
+        ? AppTheme.warning
+        : isIn
+        ? AppTheme.success
+        : AppTheme.danger;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: AppSurfaceCard(
@@ -323,7 +328,9 @@ class _InventoryPageState extends State<InventoryPage> {
         child: Row(
           children: [
             SoftIcon(
-              icon: isIn
+              icon: isAdjust
+                  ? Icons.tune_rounded
+                  : isIn
                   ? Icons.add_circle_rounded
                   : Icons.remove_circle_rounded,
               color: color,
@@ -350,7 +357,11 @@ class _InventoryPageState extends State<InventoryPage> {
               ),
             ),
             Text(
-              '${isIn ? "+" : "-"}${tx.quantity}',
+              '${isAdjust
+                  ? "±"
+                  : isIn
+                  ? "+"
+                  : "-"}${tx.quantity}',
               style: TextStyle(
                 color: color,
                 fontSize: 18,

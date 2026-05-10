@@ -94,34 +94,62 @@ class InventoryHandler {
     try {
       final itemId = int.parse(id);
       final body = jsonDecode(await request.readAsString());
-      final affected = await Database.instance.execute(
-        '''UPDATE inventory_items SET
-          name=?, category=?, sku=?, unit=?, stock_quantity=?, warning_quantity=?,
-          purchase_price=?, sale_price=?, supplier=?, location=?, notes=?, updated_at=NOW()
-          WHERE id=?''',
-        [
-          body['name'],
-          body['category'],
-          body['sku'],
-          body['unit'] ?? '件',
-          _intValue(body['stock_quantity']),
-          _intValue(body['warning_quantity'], fallback: 5),
-          _numValue(body['purchase_price']),
-          _numValue(body['sale_price']),
-          body['supplier'],
-          body['location'],
-          body['notes'],
-          itemId,
-        ],
-      );
-      if (affected == 0) {
+      final item = await Database.instance.transaction((db) async {
+        final existing = await db.query(
+          'SELECT stock_quantity FROM inventory_items WHERE id = ? FOR UPDATE',
+          [itemId],
+        );
+        if (existing.isEmpty) return null;
+
+        final oldStock = _intValue(existing.first['stock_quantity']);
+        final newStock = _intValue(body['stock_quantity']);
+        await db.execute(
+          '''UPDATE inventory_items SET
+            name=?, category=?, sku=?, unit=?, stock_quantity=?, warning_quantity=?,
+            purchase_price=?, sale_price=?, supplier=?, location=?, notes=?, updated_at=NOW()
+            WHERE id=?''',
+          [
+            body['name'],
+            body['category'],
+            body['sku'],
+            body['unit'] ?? '件',
+            newStock,
+            _intValue(body['warning_quantity'], fallback: 5),
+            _numValue(body['purchase_price']),
+            _numValue(body['sale_price']),
+            body['supplier'],
+            body['location'],
+            body['notes'],
+            itemId,
+          ],
+        );
+
+        final delta = newStock - oldStock;
+        if (delta != 0) {
+          await db.insert(
+            '''INSERT INTO inventory_transactions
+              (item_id, type, quantity, unit_price, related_record_id, operator, notes)
+              VALUES (?, 'adjust', ?, ?, NULL, ?, ?)''',
+            [
+              itemId,
+              delta.abs(),
+              _numValue(body['purchase_price']),
+              body['operator'],
+              '库存校准：$oldStock -> $newStock',
+            ],
+          );
+        }
+
+        final results = await db.query(
+          'SELECT * FROM inventory_items WHERE id = ?',
+          [itemId],
+        );
+        return results.first;
+      });
+      if (item == null) {
         return Response.notFound(jsonEncode({'error': 'Not found'}));
       }
-      final results = await Database.instance.query(
-        'SELECT * FROM inventory_items WHERE id = ?',
-        [itemId],
-      );
-      return Response.ok(jsonEncode(_itemToJson(results.first)));
+      return Response.ok(jsonEncode(_itemToJson(item)));
     } catch (e, st) {
       print('InventoryHandler.updateItem error: $e\n$st');
       return Response.internalServerError(
@@ -185,38 +213,42 @@ class InventoryHandler {
         return Response(400, body: jsonEncode({'error': 'Invalid payload'}));
       }
 
-      final stockDelta = type == 'out' ? -quantity : quantity;
-      final affected = await Database.instance.execute(
-        'UPDATE inventory_items SET stock_quantity = stock_quantity + ? WHERE id = ? AND stock_quantity + ? >= 0',
-        [stockDelta, itemId, stockDelta],
-      );
-      if (affected == 0) {
+      final tx = await Database.instance.transaction((db) async {
+        final stockDelta = type == 'out' ? -quantity : quantity;
+        final affected = await db.execute(
+          'UPDATE inventory_items SET stock_quantity = stock_quantity + ? WHERE id = ? AND stock_quantity + ? >= 0',
+          [stockDelta, itemId, stockDelta],
+        );
+        if (affected == 0) return null;
+
+        final id = await db.insert(
+          '''INSERT INTO inventory_transactions
+            (item_id, type, quantity, unit_price, related_record_id, operator, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)''',
+          [
+            itemId,
+            type,
+            quantity,
+            _numValue(body['unit_price']),
+            body['related_record_id'],
+            body['operator'],
+            body['notes'],
+          ],
+        );
+        final results = await db.query(
+          '''SELECT t.*, i.name as item_name, i.sku as item_sku, r.items as related_record_info
+             FROM inventory_transactions t
+             LEFT JOIN inventory_items i ON t.item_id = i.id
+             LEFT JOIN records r ON t.related_record_id = r.id
+             WHERE t.id = ?''',
+          [id],
+        );
+        return results.first;
+      });
+      if (tx == null) {
         return Response(400, body: jsonEncode({'error': '库存不足或配件不存在'}));
       }
-
-      final id = await Database.instance.insert(
-        '''INSERT INTO inventory_transactions
-          (item_id, type, quantity, unit_price, related_record_id, operator, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?)''',
-        [
-          itemId,
-          type,
-          quantity,
-          _numValue(body['unit_price']),
-          body['related_record_id'],
-          body['operator'],
-          body['notes'],
-        ],
-      );
-      final results = await Database.instance.query(
-        '''SELECT t.*, i.name as item_name, i.sku as item_sku, r.items as related_record_info
-           FROM inventory_transactions t
-           LEFT JOIN inventory_items i ON t.item_id = i.id
-           LEFT JOIN records r ON t.related_record_id = r.id
-           WHERE t.id = ?''',
-        [id],
-      );
-      return Response(201, body: jsonEncode(_transactionToJson(results.first)));
+      return Response(201, body: jsonEncode(_transactionToJson(tx)));
     } catch (e, st) {
       print('InventoryHandler.createTransaction error: $e\n$st');
       return Response.internalServerError(

@@ -273,7 +273,11 @@ class _RecordDetailPageState extends State<RecordDetailPage> {
               const SizedBox(width: 8),
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: () => context.push('/ledger/add'),
+                  onPressed: () async {
+                    final record = _record;
+                    if (record == null) return;
+                    await _settleRecord(record);
+                  },
                   icon: const Icon(Icons.payments_rounded, size: 18),
                   label: const Text('结算'),
                 ),
@@ -466,6 +470,30 @@ class _RecordDetailPageState extends State<RecordDetailPage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('工单状态更新失败')));
+    }
+  }
+
+  Future<void> _settleRecord(Record record) async {
+    final id = record.id;
+    if (id == null) return;
+    if ((record.cost ?? 0) <= 0) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先填写工单金额')));
+      return;
+    }
+    try {
+      final updated = await _api.settle(id);
+      if (!mounted) return;
+      setState(() => _record = updated);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已结算并生成收入流水')));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('结算失败')));
     }
   }
 }

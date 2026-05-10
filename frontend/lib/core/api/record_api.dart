@@ -43,6 +43,11 @@ class RecordApi {
     return Record.fromJson(res.data);
   }
 
+  Future<Record> settle(int id) async {
+    final res = await _client.post('/records/$id/settle');
+    return Record.fromJson(res.data);
+  }
+
   Future<void> delete(int id) async {
     await _client.delete('/records/$id');
   }

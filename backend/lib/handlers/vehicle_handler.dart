@@ -11,13 +11,13 @@ class VehicleHandler {
           (SELECT COUNT(*) FROM records r WHERE r.vehicle_id = v.id) as record_count,
           (SELECT SUM(cost) FROM records r WHERE r.vehicle_id = v.id) as total_cost,
           (SELECT MAX(record_date) FROM records r WHERE r.vehicle_id = v.id) as last_record_date
-        FROM vehicles v WHERE 1=1
+        FROM vehicles v WHERE v.deleted_at IS NULL
       ''';
       List<Object?> params = [];
       if (search != null && search.isNotEmpty) {
         sql +=
-            ' AND (v.plate_number LIKE ? OR v.vin LIKE ? OR v.owner_name LIKE ?)';
-        params.addAll(['%$search%', '%$search%', '%$search%']);
+            ' AND (v.plate_number LIKE ? OR v.vin LIKE ? OR v.owner_name LIKE ? OR v.owner_phone LIKE ?)';
+        params.addAll(['%$search%', '%$search%', '%$search%', '%$search%']);
       }
       sql += ' ORDER BY v.updated_at DESC';
       final results = await Database.instance.query(sql, params);
@@ -36,7 +36,7 @@ class VehicleHandler {
         '''SELECT v.*,
           (SELECT COUNT(*) FROM records r WHERE r.vehicle_id = v.id) as record_count,
           (SELECT SUM(cost) FROM records r WHERE r.vehicle_id = v.id) as total_cost
-        FROM vehicles v WHERE v.id = ?''',
+        FROM vehicles v WHERE v.id = ? AND v.deleted_at IS NULL''',
         [int.parse(id)],
       );
       if (results.isEmpty) {
@@ -58,11 +58,40 @@ class VehicleHandler {
       return Response(400, body: jsonEncode({'error': '车牌号不能为空'}));
     }
     final existing = await Database.instance.query(
-      'SELECT * FROM vehicles WHERE plate_number = ? LIMIT 1',
+      'SELECT * FROM vehicles WHERE plate_number = ? AND deleted_at IS NULL LIMIT 1',
       [plateNumber],
     );
     if (existing.isNotEmpty) {
       return Response.ok(jsonEncode(_toJson(existing.first)));
+    }
+    final deleted = await Database.instance.query(
+      'SELECT id FROM vehicles WHERE plate_number = ? AND deleted_at IS NOT NULL LIMIT 1',
+      [plateNumber],
+    );
+    if (deleted.isNotEmpty) {
+      final vehicleId = deleted.first['id'];
+      await Database.instance.execute(
+        '''UPDATE vehicles SET deleted_at=NULL, vin=?, brand=?, model=?, year=?, color=?, owner_name=?, owner_phone=?, photo_url=?, inspection_date=?, insurance_date=?
+           WHERE id=?''',
+        [
+          body['vin'],
+          body['brand'],
+          body['model'],
+          body['year'],
+          body['color'],
+          body['owner_name'],
+          body['owner_phone'],
+          body['photo_url'],
+          body['inspection_date'],
+          body['insurance_date'],
+          vehicleId,
+        ],
+      );
+      final results = await Database.instance.query(
+        'SELECT * FROM vehicles WHERE id = ?',
+        [vehicleId],
+      );
+      return Response(201, body: jsonEncode(_toJson(results.first)));
     }
     final id = await Database.instance.insert(
       '''INSERT INTO vehicles (plate_number, vin, brand, model, year, color, owner_name, owner_phone, photo_url, inspection_date, insurance_date)
@@ -91,11 +120,22 @@ class VehicleHandler {
   static Future<Response> update(Request request, String id) async {
     final body = jsonDecode(await request.readAsString());
     final vehicleId = int.parse(id);
+    final plateNumber = body['plate_number']?.toString().trim();
+    if (plateNumber == null || plateNumber.isEmpty) {
+      return Response(400, body: jsonEncode({'error': '车牌号不能为空'}));
+    }
+    final duplicate = await Database.instance.query(
+      'SELECT id FROM vehicles WHERE plate_number = ? AND id <> ? AND deleted_at IS NULL LIMIT 1',
+      [plateNumber, vehicleId],
+    );
+    if (duplicate.isNotEmpty) {
+      return Response(409, body: jsonEncode({'error': '该车牌号已存在'}));
+    }
     final affected = await Database.instance.execute(
       '''UPDATE vehicles SET plate_number=?, vin=?, brand=?, model=?, year=?, color=?, owner_name=?, owner_phone=?, photo_url=?, inspection_date=?, insurance_date=?
-         WHERE id=?''',
+         WHERE id=? AND deleted_at IS NULL''',
       [
-        body['plate_number'],
+        plateNumber,
         body['vin'],
         body['brand'],
         body['model'],
@@ -121,16 +161,8 @@ class VehicleHandler {
 
   static Future<Response> delete(Request request, String id) async {
     final vehicleId = int.parse(id);
-    final records = await Database.instance.query(
-      'SELECT COUNT(*) as count FROM records WHERE vehicle_id = ?',
-      [vehicleId],
-    );
-    final recordCount = int.tryParse(records.first['count'].toString()) ?? 0;
-    if (recordCount > 0) {
-      return Response(409, body: jsonEncode({'error': '车辆已有工单，不能删除'}));
-    }
     final affected = await Database.instance.execute(
-      'DELETE FROM vehicles WHERE id = ?',
+      'UPDATE vehicles SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL',
       [vehicleId],
     );
     if (affected == 0) {

@@ -11,11 +11,11 @@ class AppConfig {
   static const String appName = '车辆维修管理';
   static const String appVersion = String.fromEnvironment(
     'APP_VERSION',
-    defaultValue: '1.0.2',
+    defaultValue: '1.0.3',
   );
   static const int appBuildNumber = int.fromEnvironment(
     'APP_BUILD_NUMBER',
-    defaultValue: 3,
+    defaultValue: 4,
   );
   static const String updateManifestUrl = String.fromEnvironment(
     'APP_UPDATE_MANIFEST_URL',

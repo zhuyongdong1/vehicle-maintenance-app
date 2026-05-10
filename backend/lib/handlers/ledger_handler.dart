@@ -62,23 +62,32 @@ class LedgerHandler {
 
   static Future<Response> create(Request request) async {
     final body = jsonDecode(await request.readAsString());
-    final id = await Database.instance.insert(
-      'INSERT INTO ledger (type, category_id, amount, record_date, description, related_record_id) VALUES (?, ?, ?, ?, ?, ?)',
-      [
-        body['type'],
-        body['category_id'],
-        body['amount'],
-        body['record_date'],
-        body['description'],
-        body['related_record_id'],
-      ],
-    );
-    final results = await Database.instance.query(
-      '''SELECT l.*, c.name as category_name, r.items as related_record_info
-         FROM ledger l LEFT JOIN categories c ON l.category_id = c.id LEFT JOIN records r ON l.related_record_id = r.id WHERE l.id = ?''',
-      [id],
-    );
-    return Response(201, body: jsonEncode(_toJson(results.first)));
+    final ledger = await Database.instance.transaction((db) async {
+      final id = await db.insert(
+        'INSERT INTO ledger (type, category_id, amount, record_date, description, related_record_id) VALUES (?, ?, ?, ?, ?, ?)',
+        [
+          body['type'],
+          body['category_id'],
+          body['amount'],
+          body['record_date'],
+          body['description'],
+          body['related_record_id'],
+        ],
+      );
+      if (body['type'] == 'income' && body['related_record_id'] != null) {
+        await db.execute('UPDATE records SET status = ? WHERE id = ?', [
+          'settled',
+          body['related_record_id'],
+        ]);
+      }
+      final results = await db.query(
+        '''SELECT l.*, c.name as category_name, r.items as related_record_info
+           FROM ledger l LEFT JOIN categories c ON l.category_id = c.id LEFT JOIN records r ON l.related_record_id = r.id WHERE l.id = ?''',
+        [id],
+      );
+      return results.first;
+    });
+    return Response(201, body: jsonEncode(_toJson(ledger)));
   }
 
   static Future<Response> update(Request request, String id) async {

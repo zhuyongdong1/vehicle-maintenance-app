@@ -238,7 +238,7 @@ class _RecordListPageState extends State<RecordListPage> {
             await context.push('/records/${r.id}/edit');
             _loadData();
           } else {
-            await context.push('/ledger/add');
+            await _settleRecord(r);
           }
           return false;
         },
@@ -362,7 +362,7 @@ class _RecordListPageState extends State<RecordListPage> {
                   _CardAction(
                     icon: Icons.payments_rounded,
                     label: '结算',
-                    onTap: () => context.push('/ledger/add'),
+                    onTap: () => _settleRecord(r),
                   ),
                   const SizedBox(width: 8),
                   _CardAction(
@@ -406,6 +406,30 @@ class _RecordListPageState extends State<RecordListPage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('工单状态更新失败')));
+    }
+  }
+
+  Future<void> _settleRecord(Record record) async {
+    final id = record.id;
+    if (id == null) return;
+    if ((record.cost ?? 0) <= 0) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先填写工单金额')));
+      return;
+    }
+    try {
+      await _recordApi.settle(id);
+      await _loadData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已结算并生成收入流水')));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('结算失败')));
     }
   }
 

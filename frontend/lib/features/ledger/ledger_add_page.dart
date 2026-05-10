@@ -21,6 +21,9 @@ class _LedgerAddPageState extends State<LedgerAddPage> {
   bool _saving = false;
   List<Category> _categories = [];
   Category? _selectedCategory;
+  int? _relatedRecordId;
+  bool _prefillApplied = false;
+  String? _preferredCategoryName;
 
   final _api = LedgerApi();
   final _categoryApi = CategoryApi();
@@ -29,15 +32,45 @@ class _LedgerAddPageState extends State<LedgerAddPage> {
   void initState() {
     super.initState();
     _recordDate = _format(DateTime.now());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_prefillApplied) return;
+    _prefillApplied = true;
+    final params = GoRouterState.of(context).uri.queryParameters;
+    final type = params['type'];
+    if (type == 'income' || type == 'expense') {
+      _type = type!;
+      _preferredCategoryName = type == 'income' ? '维修收入' : '配件采购';
+    }
+    final amount = params['amount'];
+    if (amount != null && amount.isNotEmpty) {
+      _amountController.text = amount;
+    }
+    final date = params['date'];
+    if (date != null && date.isNotEmpty) {
+      _recordDate = date;
+    }
+    final description = params['description'];
+    if (description != null && description.isNotEmpty) {
+      _descriptionController.text = description;
+    }
+    _relatedRecordId = int.tryParse(params['record_id'] ?? '');
     _loadCategories();
   }
 
   Future<void> _loadCategories() async {
     try {
-      _categories = await _categoryApi.getList(
+      final categories = await _categoryApi.getList(
         _type == 'income' ? 'ledger_income' : 'ledger_expense',
       );
-      setState(() {});
+      if (!mounted) return;
+      setState(() {
+        _categories = categories;
+        _selectedCategory = _pickCategory(categories);
+      });
     } catch (_) {}
   }
 
@@ -60,6 +93,7 @@ class _LedgerAddPageState extends State<LedgerAddPage> {
           amount: double.parse(_amountController.text),
           recordDate: _recordDate,
           description: _descriptionController.text,
+          relatedRecordId: _relatedRecordId,
         ),
       );
       if (mounted) {
@@ -75,7 +109,7 @@ class _LedgerAddPageState extends State<LedgerAddPage> {
         ).showSnackBar(SnackBar(content: Text('保存失败：$e')));
       }
     }
-    setState(() => _saving = false);
+    if (mounted) setState(() => _saving = false);
   }
 
   @override
@@ -113,6 +147,7 @@ class _LedgerAddPageState extends State<LedgerAddPage> {
                       setState(() {
                         _type = 'income';
                         _selectedCategory = null;
+                        _preferredCategoryName = '维修收入';
                       });
                       _loadCategories();
                     },
@@ -144,6 +179,7 @@ class _LedgerAddPageState extends State<LedgerAddPage> {
                       setState(() {
                         _type = 'expense';
                         _selectedCategory = null;
+                        _preferredCategoryName = '配件采购';
                       });
                       _loadCategories();
                     },
@@ -241,5 +277,15 @@ class _LedgerAddPageState extends State<LedgerAddPage> {
     _amountController.dispose();
     _descriptionController.dispose();
     super.dispose();
+  }
+
+  Category? _pickCategory(List<Category> categories) {
+    final preferred = _preferredCategoryName;
+    if (preferred != null) {
+      for (final category in categories) {
+        if (category.name == preferred) return category;
+      }
+    }
+    return categories.isEmpty ? null : categories.first;
   }
 }

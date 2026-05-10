@@ -27,4 +27,10 @@ void main() {
     expect(schema, contains('status VARCHAR(20) NOT NULL DEFAULT'));
     expect(schema, contains('pending/repairing/completed/settled'));
   });
+
+  test('vehicles use soft delete so historical records are preserved', () {
+    final schema = File('lib/database/schema.sql').readAsStringSync();
+
+    expect(schema, contains('deleted_at DATETIME NULL'));
+  });
 }

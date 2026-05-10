@@ -43,17 +43,11 @@ class _VehicleListPageState extends State<VehicleListPage> {
   }
 
   Future<void> _deleteVehicle(Vehicle v) async {
-    if ((v.recordCount ?? 0) > 0) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('该车辆已有工单，不能删除')));
-      return;
-    }
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('确认删除'),
-        content: Text('确定删除 ${v.plateNumber}？仅无工单车辆允许删除。'),
+        title: const Text('删除车辆档案'),
+        content: Text('确定从车辆档案删除 ${v.plateNumber}？历史工单和账目会保留。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -74,13 +68,13 @@ class _VehicleListPageState extends State<VehicleListPage> {
         if (mounted) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(const SnackBar(content: Text('删除成功')));
+          ).showSnackBar(const SnackBar(content: Text('车辆档案已删除')));
         }
       } catch (_) {
         if (mounted) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(const SnackBar(content: Text('删除失败：车辆可能已有工单')));
+          ).showSnackBar(const SnackBar(content: Text('删除失败')));
         }
       }
     }
@@ -231,7 +225,10 @@ class _VehicleListPageState extends State<VehicleListPage> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: AppSurfaceCard(
-        onTap: () => context.push('/vehicles/${v.id}'),
+        onTap: () async {
+          await context.push('/vehicles/${v.id}');
+          _loadData();
+        },
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -283,7 +280,7 @@ class _VehicleListPageState extends State<VehicleListPage> {
                   ),
                 ),
                 IconButton(
-                  tooltip: active ? '已有工单，不能删除' : '删除',
+                  tooltip: '删除档案',
                   onPressed: () => _deleteVehicle(v),
                   icon: const Icon(
                     Icons.delete_outline_rounded,

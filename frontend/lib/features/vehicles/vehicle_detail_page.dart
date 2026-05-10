@@ -57,11 +57,17 @@ class _VehicleDetailPageState extends State<VehicleDetailPage> {
         title: const Text('车辆详情'),
         actions: [
           IconButton(
+            tooltip: '编辑车辆',
             icon: const Icon(Icons.edit_rounded),
             onPressed: () async {
               await context.push('/vehicles/${widget.vehicleId}/edit');
               _loadData();
             },
+          ),
+          IconButton(
+            tooltip: '删除档案',
+            icon: const Icon(Icons.delete_outline_rounded),
+            onPressed: () => _deleteVehicle(v),
           ),
         ],
       ),
@@ -274,4 +280,38 @@ class _VehicleDetailPageState extends State<VehicleDetailPage> {
       ),
     ),
   );
+
+  Future<void> _deleteVehicle(Vehicle vehicle) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除车辆档案'),
+        content: Text('确定从车辆档案删除 ${vehicle.plateNumber} 吗？历史工单和账目会保留。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _vehicleApi.delete(widget.vehicleId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('车辆档案已删除')));
+      context.pop(true);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('删除失败')));
+    }
+  }
 }

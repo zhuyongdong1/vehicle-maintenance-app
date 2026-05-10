@@ -60,14 +60,14 @@ class _VehicleEditPageState extends State<VehicleEditPage> {
     setState(() => _saving = true);
     try {
       final vehicle = Vehicle(
-        plateNumber: _plateController.text,
-        vin: _vinController.text,
-        brand: _brandController.text,
-        model: _modelController.text,
+        plateNumber: _plateController.text.trim(),
+        vin: _vinController.text.trim(),
+        brand: _brandController.text.trim(),
+        model: _modelController.text.trim(),
         year: int.tryParse(_yearController.text),
-        color: _colorController.text,
-        ownerName: _ownerNameController.text,
-        ownerPhone: _ownerPhoneController.text,
+        color: _colorController.text.trim(),
+        ownerName: _ownerNameController.text.trim(),
+        ownerPhone: _ownerPhoneController.text.trim(),
         inspectionDate: _inspectionDate,
         insuranceDate: _insuranceDate,
       );
@@ -143,7 +143,7 @@ class _VehicleEditPageState extends State<VehicleEditPage> {
         keyboardType: keyboardType,
         decoration: InputDecoration(labelText: label),
         validator: required
-            ? (v) => (v == null || v.isEmpty) ? '必填' : null
+            ? (v) => (v == null || v.trim().isEmpty) ? '必填' : null
             : null,
       ),
     );

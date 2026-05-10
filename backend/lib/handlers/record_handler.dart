@@ -30,8 +30,13 @@ class RecordHandler {
       }
       if (search != null && search.isNotEmpty) {
         sql +=
-            ' AND (r.items LIKE ? OR r.notes LIKE ? OR v.plate_number LIKE ?)';
-        queryParams.addAll(['%$search%', '%$search%', '%$search%']);
+            ' AND (r.items LIKE ? OR r.notes LIKE ? OR r.workshop LIKE ? OR v.plate_number LIKE ?)';
+        queryParams.addAll([
+          '%$search%',
+          '%$search%',
+          '%$search%',
+          '%$search%',
+        ]);
       }
       sql += ' ORDER BY r.record_date DESC';
       final results = await Database.instance.query(sql, queryParams);
@@ -58,99 +63,72 @@ class RecordHandler {
 
   static Future<Response> create(Request request) async {
     final body = jsonDecode(await request.readAsString());
-    final id = await Database.instance.insert(
-      '''INSERT INTO records (vehicle_id, category_id, status, items, cost, purchase_cost, mileage, record_date, workshop, notes, parts, fee_items, reminder_date, reminder_mileage)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-      [
-        body['vehicle_id'],
-        body['category_id'],
-        _normalizeStatus(body['status']) ?? 'pending',
-        body['items'],
-        body['cost'],
-        body['purchase_cost'],
-        body['mileage'],
-        body['record_date'],
-        body['workshop'],
-        body['notes'],
-        body['parts'],
-        _encodeFeeItems(body['fee_items']),
-        body['reminder_date'],
-        body['reminder_mileage'],
-      ],
-    );
-
-    if (body['create_ledger'] == true) {
-      try {
-        final saleAmount = _amount(body['cost']);
-        final purchaseAmount = _amount(body['purchase_cost']);
-        if (saleAmount > 0) {
-          await Database.instance.insert(
-            "INSERT INTO ledger (type, category_id, amount, record_date, description, related_record_id) VALUES ('income', ?, ?, ?, ?, ?)",
-            [
-              await _ledgerCategoryId('ledger_income', '维修收入'),
-              saleAmount,
-              body['record_date'],
-              body['items']?.toString() ?? '维修收入',
-              id,
-            ],
-          );
-        }
-        if (purchaseAmount > 0) {
-          await Database.instance.insert(
-            "INSERT INTO ledger (type, category_id, amount, record_date, description, related_record_id) VALUES ('expense', ?, ?, ?, ?, ?)",
-            [
-              await _ledgerCategoryId('ledger_expense', '配件采购'),
-              purchaseAmount,
-              body['record_date'],
-              '${body['items']?.toString() ?? '维修项目'}进价',
-              id,
-            ],
-          );
-        }
-      } catch (e) {
-        print('Auto ledger creation failed: $e');
+    final record = await Database.instance.transaction((db) async {
+      final id = await db.insert(
+        '''INSERT INTO records (vehicle_id, category_id, status, items, cost, purchase_cost, mileage, record_date, workshop, notes, parts, fee_items, reminder_date, reminder_mileage)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+        [
+          body['vehicle_id'],
+          body['category_id'],
+          _normalizeStatus(body['status']) ?? 'pending',
+          body['items'],
+          body['cost'],
+          body['purchase_cost'],
+          body['mileage'],
+          body['record_date'],
+          body['workshop'],
+          body['notes'],
+          body['parts'],
+          _encodeFeeItems(body['fee_items']),
+          body['reminder_date'],
+          body['reminder_mileage'],
+        ],
+      );
+      if (body['create_ledger'] == true) {
+        await _syncLedgerEntries(db, id, body, createMissing: true);
       }
-    }
-    final results = await Database.instance.query(
-      '''SELECT r.*, v.plate_number, CONCAT(COALESCE(v.brand,''), ' ', COALESCE(v.model,'')) as vehicle_info, c.name as category_name
-         FROM records r LEFT JOIN vehicles v ON r.vehicle_id = v.id LEFT JOIN categories c ON r.category_id = c.id WHERE r.id = ?''',
-      [id],
-    );
-    return Response(201, body: jsonEncode(_toJson(results.first)));
+      return _fetchRecordById(db, id);
+    });
+    return Response(201, body: jsonEncode(_toJson(record)));
   }
 
   static Future<Response> update(Request request, String id) async {
     final body = jsonDecode(await request.readAsString());
     final recordId = int.parse(id);
-    final affected = await Database.instance.execute(
-      '''UPDATE records SET vehicle_id=?, category_id=?, status=?, items=?, cost=?, purchase_cost=?, mileage=?, record_date=?, workshop=?, notes=?, parts=?, fee_items=?, reminder_date=?, reminder_mileage=? WHERE id=?''',
-      [
-        body['vehicle_id'],
-        body['category_id'],
-        _normalizeStatus(body['status']) ?? 'pending',
-        body['items'],
-        body['cost'],
-        body['purchase_cost'],
-        body['mileage'],
-        body['record_date'],
-        body['workshop'],
-        body['notes'],
-        body['parts'],
-        _encodeFeeItems(body['fee_items']),
-        body['reminder_date'],
-        body['reminder_mileage'],
+    final record = await Database.instance.transaction((db) async {
+      final affected = await db.execute(
+        '''UPDATE records SET vehicle_id=?, category_id=?, status=?, items=?, cost=?, purchase_cost=?, mileage=?, record_date=?, workshop=?, notes=?, parts=?, fee_items=?, reminder_date=?, reminder_mileage=? WHERE id=?''',
+        [
+          body['vehicle_id'],
+          body['category_id'],
+          _normalizeStatus(body['status']) ?? 'pending',
+          body['items'],
+          body['cost'],
+          body['purchase_cost'],
+          body['mileage'],
+          body['record_date'],
+          body['workshop'],
+          body['notes'],
+          body['parts'],
+          _encodeFeeItems(body['fee_items']),
+          body['reminder_date'],
+          body['reminder_mileage'],
+          recordId,
+        ],
+      );
+      if (affected == 0) return null;
+      await _syncLedgerEntries(
+        db,
         recordId,
-      ],
-    );
-    if (affected == 0) {
+        body,
+        createMissing: body['create_ledger'] == true,
+      );
+      return _fetchRecordById(db, recordId);
+    });
+    if (record == null) {
       return Response.notFound(jsonEncode({'error': 'Not found'}));
     }
-    final results = await Database.instance.query(
-      '''SELECT r.*, v.plate_number, CONCAT(COALESCE(v.brand,''), ' ', COALESCE(v.model,'')) as vehicle_info, c.name as category_name
-         FROM records r LEFT JOIN vehicles v ON r.vehicle_id = v.id LEFT JOIN categories c ON r.category_id = c.id WHERE r.id = ?''',
-      [recordId],
-    );
-    return Response.ok(jsonEncode(_toJson(results.first)));
+    return Response.ok(jsonEncode(_toJson(record)));
   }
 
   static Future<Response> updateStatus(Request request, String id) async {
@@ -175,11 +153,54 @@ class RecordHandler {
     return Response.ok(jsonEncode(_toJson(results.first)));
   }
 
+  static Future<Response> settle(Request request, String id) async {
+    final recordId = int.parse(id);
+    try {
+      final record = await Database.instance.transaction((db) async {
+        final records = await db.query(
+          'SELECT * FROM records WHERE id = ? FOR UPDATE',
+          [recordId],
+        );
+        if (records.isEmpty) return null;
+        final row = records.first;
+        final amount = _amount(row['cost']);
+        if (amount <= 0) {
+          throw const _BadRequest('请先填写工单金额');
+        }
+        await _syncLedgerEntry(
+          db,
+          recordId: recordId,
+          type: 'income',
+          categoryId: await _ledgerCategoryId(db, 'ledger_income', '维修收入'),
+          amount: amount,
+          recordDate: row['record_date'],
+          description: _nonEmpty(row['items']) ?? '维修收入',
+          createMissing: true,
+        );
+        await db.execute('UPDATE records SET status = ? WHERE id = ?', [
+          'settled',
+          recordId,
+        ]);
+        return _fetchRecordById(db, recordId);
+      });
+      if (record == null) {
+        return Response.notFound(jsonEncode({'error': 'Not found'}));
+      }
+      return Response.ok(jsonEncode(_toJson(record)));
+    } on _BadRequest catch (e) {
+      return Response(400, body: jsonEncode({'error': e.message}));
+    }
+  }
+
   static Future<Response> delete(Request request, String id) async {
-    final affected = await Database.instance.execute(
-      'DELETE FROM records WHERE id = ?',
-      [int.parse(id)],
-    );
+    final recordId = int.parse(id);
+    final affected = await Database.instance.transaction((db) async {
+      await db.execute(
+        'UPDATE ledger SET related_record_id = NULL WHERE related_record_id = ?',
+        [recordId],
+      );
+      return db.execute('DELETE FROM records WHERE id = ?', [recordId]);
+    });
     if (affected == 0) {
       return Response.notFound(jsonEncode({'error': 'Not found'}));
     }
@@ -229,11 +250,100 @@ class RecordHandler {
         : null;
   }
 
-  static Future<int?> _ledgerCategoryId(String type, String name) async {
-    final results = await Database.instance.query(
+  static Future<dynamic> _fetchRecordById(DatabaseExecutor db, int id) async {
+    final results = await db.query(
+      '''SELECT r.*, v.plate_number, CONCAT(COALESCE(v.brand,''), ' ', COALESCE(v.model,'')) as vehicle_info, c.name as category_name
+         FROM records r LEFT JOIN vehicles v ON r.vehicle_id = v.id LEFT JOIN categories c ON r.category_id = c.id WHERE r.id = ?''',
+      [id],
+    );
+    if (results.isEmpty) {
+      throw StateError('Record $id not found after write');
+    }
+    return results.first;
+  }
+
+  static Future<void> _syncLedgerEntries(
+    DatabaseExecutor db,
+    int recordId,
+    Map<String, dynamic> body, {
+    required bool createMissing,
+  }) async {
+    final items = _nonEmpty(body['items']) ?? '维修项目';
+    final recordDate = body['record_date'];
+    await _syncLedgerEntry(
+      db,
+      recordId: recordId,
+      type: 'income',
+      categoryId: await _ledgerCategoryId(db, 'ledger_income', '维修收入'),
+      amount: _amount(body['cost']),
+      recordDate: recordDate,
+      description: _nonEmpty(body['items']) ?? '维修收入',
+      createMissing: createMissing,
+    );
+    await _syncLedgerEntry(
+      db,
+      recordId: recordId,
+      type: 'expense',
+      categoryId: await _ledgerCategoryId(db, 'ledger_expense', '配件采购'),
+      amount: _amount(body['purchase_cost']),
+      recordDate: recordDate,
+      description: '$items进价',
+      createMissing: createMissing,
+    );
+  }
+
+  static Future<void> _syncLedgerEntry(
+    DatabaseExecutor db, {
+    required int recordId,
+    required String type,
+    required int? categoryId,
+    required double amount,
+    required dynamic recordDate,
+    required String description,
+    required bool createMissing,
+  }) async {
+    final existing = await db.query(
+      'SELECT id FROM ledger WHERE related_record_id = ? AND type = ? ORDER BY id LIMIT 1',
+      [recordId, type],
+    );
+    if (existing.isNotEmpty) {
+      await db.execute(
+        '''UPDATE ledger
+           SET category_id = ?, amount = ?, record_date = ?, description = ?
+           WHERE id = ?''',
+        [categoryId, amount, recordDate, description, existing.first['id']],
+      );
+      return;
+    }
+    if (!createMissing || amount <= 0) return;
+    await db.insert(
+      '''INSERT INTO ledger
+         (type, category_id, amount, record_date, description, related_record_id)
+         VALUES (?, ?, ?, ?, ?, ?)''',
+      [type, categoryId, amount, recordDate, description, recordId],
+    );
+  }
+
+  static String? _nonEmpty(dynamic value) {
+    final text = value?.toString().trim();
+    return text == null || text.isEmpty ? null : text;
+  }
+
+  static Future<int?> _ledgerCategoryId(
+    DatabaseExecutor db,
+    String type,
+    String name,
+  ) async {
+    final results = await db.query(
       'SELECT id FROM categories WHERE type = ? AND name = ? LIMIT 1',
       [type, name],
     );
     return results.isEmpty ? null : results.first['id'] as int?;
   }
+}
+
+class _BadRequest implements Exception {
+  final String message;
+
+  const _BadRequest(this.message);
 }
