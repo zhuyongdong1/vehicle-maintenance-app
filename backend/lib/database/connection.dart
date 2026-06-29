@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:mysql1/mysql1.dart';
 import '../config.dart';
 
@@ -32,7 +34,11 @@ class DatabaseSession implements DatabaseExecutor {
 
 class Database implements DatabaseExecutor {
   static Database? _instance;
+  static const Duration _operationTimeout = Duration(seconds: 8);
+  static const Duration _idlePingAfter = Duration(minutes: 2);
   MySqlConnection? _connection;
+  DateTime? _lastUsedAt;
+  Future<void> _operationQueue = Future.value();
 
   Database._();
 
@@ -43,14 +49,13 @@ class Database implements DatabaseExecutor {
 
   Future<void> initialize() async {
     try {
-      _connection = await _connect();
-      await _connection!.query('SET NAMES utf8mb4');
+      _connection = await _openConnection();
       if (AppConfig.runSchemaMigrations) {
         await _ensureSchemaUpdates();
       }
       print('MySQL connected successfully');
     } catch (e, st) {
-      _connection = null;
+      await _closeQuietly();
       print('MySQL connection failed: $e\n$st');
       rethrow;
     }
@@ -64,54 +69,117 @@ class Database implements DatabaseExecutor {
     db: AppConfig.dbName,
   );
 
-  Future<MySqlConnection> _connect() => MySqlConnection.connect(_settings);
+  Future<MySqlConnection> _openConnection() async {
+    final connection = await MySqlConnection.connect(
+      _settings,
+    ).timeout(_operationTimeout);
+    await connection.query('SET NAMES utf8mb4').timeout(_operationTimeout);
+    _lastUsedAt = DateTime.now();
+    return connection;
+  }
 
-  Future<T> _withReconnect<T>(
-    Future<T> Function(MySqlConnection connection) operation,
-  ) async {
-    if (_connection == null) throw Exception('Database not connected');
+  Future<T> _withConnection<T>(
+    Future<T> Function(MySqlConnection connection) operation, {
+    bool retryOnTimeout = true,
+  }) async {
+    final previousOperation = _operationQueue;
+    final currentOperation = Completer<void>();
+    _operationQueue = currentOperation.future;
+
     try {
-      return await operation(_connection!);
-    } catch (e) {
-      if (!_isConnectionClosed(e)) rethrow;
-      await _closeQuietly();
-      _connection = await _connect();
-      await _connection!.query('SET NAMES utf8mb4');
-      return await operation(_connection!);
+      await previousOperation.catchError((_) {});
+      return await _runWithConnection(
+        operation,
+        retryOnTimeout: retryOnTimeout,
+      );
+    } finally {
+      currentOperation.complete();
     }
   }
 
-  bool _isConnectionClosed(Object error) {
+  Future<T> _runWithConnection<T>(
+    Future<T> Function(MySqlConnection connection) operation, {
+    required bool retryOnTimeout,
+  }) async {
+    await _ensureConnected();
+    try {
+      final result = await operation(_connection!).timeout(_operationTimeout);
+      _lastUsedAt = DateTime.now();
+      return result;
+    } catch (e) {
+      if (!_isRecoverableConnectionError(e)) rethrow;
+      await _closeQuietly();
+      if (e is TimeoutException && !retryOnTimeout) rethrow;
+
+      await _ensureConnected();
+      final result = await operation(_connection!).timeout(_operationTimeout);
+      _lastUsedAt = DateTime.now();
+      return result;
+    }
+  }
+
+  Future<void> _ensureConnected() async {
+    if (_connection == null) {
+      _connection = await _openConnection();
+      return;
+    }
+
+    final lastUsedAt = _lastUsedAt;
+    if (lastUsedAt == null ||
+        DateTime.now().difference(lastUsedAt) < _idlePingAfter) {
+      return;
+    }
+
+    try {
+      await _connection!.query('SELECT 1').timeout(const Duration(seconds: 2));
+      _lastUsedAt = DateTime.now();
+    } catch (_) {
+      await _closeQuietly();
+      _connection = await _openConnection();
+    }
+  }
+
+  bool _isRecoverableConnectionError(Object error) {
+    if (error is TimeoutException) return true;
     final message = error.toString().toLowerCase();
     return message.contains('socket') && message.contains('closed') ||
         message.contains('connection') && message.contains('closed') ||
-        message.contains('cannot write');
+        message.contains('cannot write') ||
+        message.contains('broken pipe') ||
+        message.contains('server has gone away');
   }
 
   Future<void> _closeQuietly() async {
-    try {
-      await _connection?.close();
-    } catch (_) {}
+    await _closeConnectionQuietly(_connection);
     _connection = null;
+    _lastUsedAt = null;
+  }
+
+  Future<void> _closeConnectionQuietly(MySqlConnection? connection) async {
+    try {
+      await connection?.close().timeout(const Duration(seconds: 2));
+    } catch (_) {}
   }
 
   @override
   Future<Results> query(String sql, [List<Object?>? params]) async {
-    return _withReconnect((connection) => connection.query(sql, params));
+    return _withConnection((connection) => connection.query(sql, params));
   }
 
   @override
   Future<int> insert(String sql, [List<Object?>? params]) async {
-    final result = await _withReconnect(
+    final result = await _withConnection(
       (connection) => connection.query(sql, params),
+      retryOnTimeout: false,
     );
     return result.insertId ?? 0;
   }
 
   @override
   Future<int> execute(String sql, [List<Object?>? params]) async {
-    final result = await _withReconnect(
+    final result = await _withConnection(
       (connection) => connection.query(sql, params),
+      retryOnTimeout: false,
     );
     return result.affectedRows ?? 0;
   }
@@ -119,7 +187,7 @@ class Database implements DatabaseExecutor {
   Future<T> transaction<T>(
     Future<T> Function(DatabaseExecutor db) operation,
   ) async {
-    return _withReconnect((connection) async {
+    return _withConnection((connection) async {
       await connection.query('START TRANSACTION');
       try {
         final result = await operation(DatabaseSession._(connection));
@@ -133,7 +201,7 @@ class Database implements DatabaseExecutor {
         }
         rethrow;
       }
-    });
+    }, retryOnTimeout: false);
   }
 
   Future<void> _ensureSchemaUpdates() async {

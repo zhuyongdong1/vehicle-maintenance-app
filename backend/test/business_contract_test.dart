@@ -47,6 +47,37 @@ void main() {
     expect(source, isNot(contains('DELETE FROM vehicles')));
   });
 
+  test('vehicle writes normalize empty optional fields before saving', () {
+    final source = File('lib/handlers/vehicle_handler.dart').readAsStringSync();
+
+    expect(source, contains('_vehiclePayload'));
+    expect(source, contains('_nullableDate'));
+    expect(
+      source,
+      contains("inspectionDate: _nullableDate(body['inspection_date'])"),
+    );
+    expect(
+      source,
+      contains("insuranceDate: _nullableDate(body['insurance_date'])"),
+    );
+    expect(source, isNot(contains("body['inspection_date'],")));
+    expect(source, isNot(contains("body['insurance_date'],")));
+  });
+
+  test('vehicle update treats unchanged rows as successful saves', () {
+    final source = File('lib/handlers/vehicle_handler.dart').readAsStringSync();
+
+    expect(source, contains('if (affected == 0)'));
+    expect(
+      source,
+      contains('SELECT * FROM vehicles WHERE id = ? AND deleted_at IS NULL'),
+    );
+    expect(
+      source,
+      contains('return Response.ok(jsonEncode(_toJson(existing.first)))'),
+    );
+  });
+
   test('manual stock edits create an adjustment transaction', () {
     final source = File(
       'lib/handlers/inventory_handler.dart',
@@ -55,4 +86,16 @@ void main() {
     expect(source, contains("VALUES (?, 'adjust', ?, ?, NULL, ?, ?)"));
     expect(source, contains('库存校准'));
   });
+
+  test(
+    'database connections fail fast and avoid retrying timed-out writes',
+    () {
+      final source = File('lib/database/connection.dart').readAsStringSync();
+
+      expect(source, contains('TimeoutException'));
+      expect(source, contains('Future<Results> query'));
+      expect(source, contains('retryOnTimeout: false'));
+      expect(source, contains('_closeConnectionQuietly'));
+    },
+  );
 }

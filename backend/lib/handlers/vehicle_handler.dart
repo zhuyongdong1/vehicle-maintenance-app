@@ -57,6 +57,7 @@ class VehicleHandler {
     if (plateNumber == null || plateNumber.isEmpty) {
       return Response(400, body: jsonEncode({'error': '车牌号不能为空'}));
     }
+    final payload = _vehiclePayload(body);
     final existing = await Database.instance.query(
       'SELECT * FROM vehicles WHERE plate_number = ? AND deleted_at IS NULL LIMIT 1',
       [plateNumber],
@@ -74,16 +75,16 @@ class VehicleHandler {
         '''UPDATE vehicles SET deleted_at=NULL, vin=?, brand=?, model=?, year=?, color=?, owner_name=?, owner_phone=?, photo_url=?, inspection_date=?, insurance_date=?
            WHERE id=?''',
         [
-          body['vin'],
-          body['brand'],
-          body['model'],
-          body['year'],
-          body['color'],
-          body['owner_name'],
-          body['owner_phone'],
-          body['photo_url'],
-          body['inspection_date'],
-          body['insurance_date'],
+          payload.vin,
+          payload.brand,
+          payload.model,
+          payload.year,
+          payload.color,
+          payload.ownerName,
+          payload.ownerPhone,
+          payload.photoUrl,
+          payload.inspectionDate,
+          payload.insuranceDate,
           vehicleId,
         ],
       );
@@ -98,16 +99,16 @@ class VehicleHandler {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
       [
         plateNumber,
-        body['vin'],
-        body['brand'],
-        body['model'],
-        body['year'],
-        body['color'],
-        body['owner_name'],
-        body['owner_phone'],
-        body['photo_url'],
-        body['inspection_date'],
-        body['insurance_date'],
+        payload.vin,
+        payload.brand,
+        payload.model,
+        payload.year,
+        payload.color,
+        payload.ownerName,
+        payload.ownerPhone,
+        payload.photoUrl,
+        payload.inspectionDate,
+        payload.insuranceDate,
       ],
     );
     final results = await Database.instance.query(
@@ -131,26 +132,34 @@ class VehicleHandler {
     if (duplicate.isNotEmpty) {
       return Response(409, body: jsonEncode({'error': '该车牌号已存在'}));
     }
+    final payload = _vehiclePayload(body);
     final affected = await Database.instance.execute(
       '''UPDATE vehicles SET plate_number=?, vin=?, brand=?, model=?, year=?, color=?, owner_name=?, owner_phone=?, photo_url=?, inspection_date=?, insurance_date=?
          WHERE id=? AND deleted_at IS NULL''',
       [
         plateNumber,
-        body['vin'],
-        body['brand'],
-        body['model'],
-        body['year'],
-        body['color'],
-        body['owner_name'],
-        body['owner_phone'],
-        body['photo_url'],
-        body['inspection_date'],
-        body['insurance_date'],
+        payload.vin,
+        payload.brand,
+        payload.model,
+        payload.year,
+        payload.color,
+        payload.ownerName,
+        payload.ownerPhone,
+        payload.photoUrl,
+        payload.inspectionDate,
+        payload.insuranceDate,
         vehicleId,
       ],
     );
     if (affected == 0) {
-      return Response.notFound(jsonEncode({'error': 'Not found'}));
+      final existing = await Database.instance.query(
+        'SELECT * FROM vehicles WHERE id = ? AND deleted_at IS NULL',
+        [vehicleId],
+      );
+      if (existing.isEmpty) {
+        return Response.notFound(jsonEncode({'error': 'Not found'}));
+      }
+      return Response.ok(jsonEncode(_toJson(existing.first)));
     }
     final results = await Database.instance.query(
       'SELECT * FROM vehicles WHERE id = ?',
@@ -192,4 +201,58 @@ class VehicleHandler {
   };
 
   static String _fmt(dynamic v) => v?.toString().split(' ').first ?? '';
+
+  static _VehiclePayload _vehiclePayload(Map<String, dynamic> body) {
+    return _VehiclePayload(
+      vin: _nullableText(body['vin']),
+      brand: _nullableText(body['brand']),
+      model: _nullableText(body['model']),
+      year: _nullableInt(body['year']),
+      color: _nullableText(body['color']),
+      ownerName: _nullableText(body['owner_name']),
+      ownerPhone: _nullableText(body['owner_phone']),
+      photoUrl: _nullableText(body['photo_url']),
+      inspectionDate: _nullableDate(body['inspection_date']),
+      insuranceDate: _nullableDate(body['insurance_date']),
+    );
+  }
+
+  static String? _nullableText(dynamic value) {
+    final text = value?.toString().trim();
+    return text == null || text.isEmpty ? null : text;
+  }
+
+  static int? _nullableInt(dynamic value) {
+    if (value is int) return value;
+    final text = _nullableText(value);
+    return text == null ? null : int.tryParse(text);
+  }
+
+  static String? _nullableDate(dynamic value) => _nullableText(value);
+}
+
+class _VehiclePayload {
+  final String? vin;
+  final String? brand;
+  final String? model;
+  final int? year;
+  final String? color;
+  final String? ownerName;
+  final String? ownerPhone;
+  final String? photoUrl;
+  final String? inspectionDate;
+  final String? insuranceDate;
+
+  const _VehiclePayload({
+    required this.vin,
+    required this.brand,
+    required this.model,
+    required this.year,
+    required this.color,
+    required this.ownerName,
+    required this.ownerPhone,
+    required this.photoUrl,
+    required this.inspectionDate,
+    required this.insuranceDate,
+  });
 }
